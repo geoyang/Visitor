@@ -1,0 +1,257 @@
+{
+  "name": "visitor-management-app",
+  "version": "1.0.0",
+  "description": "Cross-platform visitor management app for offices",
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "build": "expo build",
+    "build:android": "expo build:android",
+    "build:ios": "expo build:ios",
+    "publish": "expo publish",
+    "eject": "expo eject",
+    "test": "jest",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
+    "prebuild": "expo prebuild",
+    "prebuild:clean": "expo prebuild --clean"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.3.1",
+    "@react-navigation/bottom-tabs": "^6.5.8",
+    "@react-navigation/drawer": "^6.6.3",
+    "@react-navigation/native": "^6.1.7",
+    "@react-navigation/stack": "^6.3.17",
+    "axios": "^1.5.0",
+    "expo": "~49.0.15",
+    "expo-camera": "~13.4.4",
+    "expo-constants": "~14.4.2",
+    "expo-device": "~5.4.0",
+    "expo-document-picker": "~11.5.4",
+    "expo-file-system": "~15.4.5",
+    "expo-font": "~11.4.0",
+    "expo-image-picker": "~14.3.2",
+    "expo-linear-gradient": "~12.3.0",
+    "expo-location": "~16.1.0",
+    "expo-notifications": "~0.20.1",
+    "expo-permissions": "~14.2.1",
+    "expo-secure-store": "~12.3.1",
+    "expo-splash-screen": "~0.20.5",
+    "expo-sqlite": "~11.3.3",
+    "expo-status-bar": "~1.6.0",
+    "expo-updates": "~0.18.17",
+    "lodash": "^4.17.21",
+    "moment": "^2.29.4",
+    "react": "18.2.0",
+    "react-hook-form": "^7.46.1",
+    "react-native": "0.72.6",
+    "react-native-barcode-mask": "^1.2.4",
+    "react-native-chart-kit": "^6.12.0",
+    "react-native-date-picker": "^4.3.3",
+    "react-native-draggable-flatlist": "^4.0.1",
+    "react-native-elements": "^3.4.3",
+    "react-native-flash-message": "^0.4.2",
+    "react-native-gesture-handler": "~2.12.0",
+    "react-native-image-crop-picker": "^0.40.3",
+    "react-native-modal": "^13.0.1",
+    "react-native-paper": "^5.10.6",
+    "react-native-picker-select": "^8.1.0",
+    "react-native-qrcode-scanner": "^1.5.5",
+    "react-native-qrcode-svg": "^6.2.0",
+    "react-native-reanimated": "~3.3.0",
+    "react-native-safe-area-context": "4.6.3",
+    "react-native-screens": "~3.22.0",
+    "react-native-signature-canvas": "^4.7.2",
+    "react-native-skeleton-placeholder": "^5.2.4",
+    "react-native-super-grid": "^4.4.6",
+    "react-native-svg": "13.9.0",
+    "react-native-vector-icons": "^10.0.0",
+    "react-query": "^3.39.3",
+    "yup": "^1.3.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0",
+    "@babel/preset-env": "^7.20.0",
+    "@babel/runtime": "^7.20.0",
+    "@react-native/eslint-config": "^0.72.2",
+    "@react-native/metro-config": "^0.72.11",
+    "@tsconfig/react-native": "^3.0.0",
+    "@types/react": "^18.2.6",
+    "@types/react-test-renderer": "^18.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.2.0",
+    "@typescript-eslint/parser": "^6.2.0",
+    "eslint": "^8.19.0",
+    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-native": "^4.1.0",
+    "jest": "^29.2.1",
+    "metro-react-native-babel-preset": "0.76.8",
+    "prettier": "^2.4.1",
+    "react-test-renderer": "18.2.0",
+    "typescript": "4.9.4"
+  },
+  "keywords": [
+    "visitor management",
+    "office management",
+    "react native",
+    "expo",
+    "mobile app",
+    "tablet app",
+    "check-in system"
+  ],
+  "author": "Your Company",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourcompany/visitor-management-app.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourcompany/visitor-management-app/issues"
+  },
+  "homepage": "https://github.com/yourcompany/visitor-management-app#readme",
+  "private": true,
+  "expo": {
+    "name": "Visitor Management",
+    "slug": "visitor-management-app",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2563eb"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yourcompany.visitormanagement",
+      "buildNumber": "1.0.0",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses camera to take visitor photos",
+        "NSLocationWhenInUseUsageDescription": "This app uses location to track visitor check-ins",
+        "NSPhotoLibraryUsageDescription": "This app needs access to photo library to select visitor photos"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2563eb"
+      },
+      "package": "com.yourcompany.visitormanagement",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to take visitor photos."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location to track visitor check-ins."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you select visitor profile pictures."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "your-eas-project-id"
+      }
+    }
+  },
+  "jest": {
+    "preset": "react-native",
+    "moduleFileExtensions": [
+      "ts",
+      "tsx",
+      "js",
+      "jsx",
+      "json",
+      "node"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!(react-native|@react-native|expo|@expo|@unimodules|unimodules|sentry-expo|native-base|react-clone-referenced-element|@react-navigation))"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.(ts|tsx|js)",
+      "**/*.(test|spec).(ts|tsx|js)"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.{js,jsx,ts,tsx}",
+      "!src/**/*.d.ts"
+    ]
+  },
+  "eslintConfig": {
+    "extends": [
+      "@react-native",
+      "eslint:recommended",
+      "@typescript-eslint/recommended"
+    ],
+    "parser": "@typescript-eslint/parser",
+    "plugins": [
+      "@typescript-eslint",
+      "react",
+      "react-hooks",
+      "react-native"
+    ],
+    "rules": {
+      "react-native/no-unused-styles": 2,
+      "react-native/split-platform-components": 2,
+      "react-native/no-inline-styles": 2,
+      "react-native/no-color-literals": 2,
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn"
+    },
+    "env": {
+      "react-native/react-native": true
+    }
+  },
+  "prettier": {
+    "bracketSpacing": true,
+    "jsxBracketSameLine": true,
+    "singleQuote": true,
+    "trailingComma": "es5",
+    "arrowParens": "avoid",
+    "semi": true,
+    "tabWidth": 2,
+    "useTabs": false
+  },
+  "metro": {
+    "resolver": {
+      "assetExts": [
+        "bin",
+        "txt",
+        "jpg",
+        "png",
+        "json",
+        "gif",
+        "webp",
+        "svg"
+      ]
+    }
+  }
+}

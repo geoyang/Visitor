@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  # MongoDB for Development
+  mongodb:
+    image: mongo:7.0
+    container_name: visitor_mongodb_dev
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: devpassword
+      MONGO_INITDB_DATABASE: visitor_management_dev
+    volumes:
+      - mongodb_dev_data:/data/db
+      - ./mongodb/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - visitor_dev_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Redis for Development
+  redis:
+    image: redis:7.2-alpine
+    container_name: visitor_redis_dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - visitor_dev_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # FastAPI Backend for Development
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: visitor_backend_dev
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+      - "5678:5678"  # Debug port
+    environment:
+      # Database
+      MONGODB_URL: mongodb://admin:devpassword@mongodb:27017/visitor_management_dev?authSource=admin
+      DATABASE_NAME: visitor_management_dev
+      REDIS_URL: redis://redis:6379/0
+      
+      # Development settings
+      DEBUG: "True"
+      ENVIRONMENT: development
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+      
+      # Security (Development only!)
+      JWT_SECRET_KEY: dev-secret-key-not-for-production
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: 1440
+      
+      # CORS (Allow all for development)
+      CORS_ORIGINS: "*"
+      
+      # Logging
+      LOG_LEVEL: DEBUG
+      
+      # File uploads
+      MAX_FILE_SIZE: 52428800  # 50MB for development
+      UPLOAD_PATH: /app/uploads
+    
+    volumes:
+      # Mount source code for hot reload
+      - .:/app
+      - /app/__pycache__  # Exclude cache
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    networks:
+      - visitor_dev_network
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  mongodb_dev_data:
+    driver: local
+  redis_dev_data:
+    driver: local
+
+networks:
+  visitor_dev_network:
+    driver: bridge
