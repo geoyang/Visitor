@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator } from '@react-navigation/stack';
 import {
   View,
   Text,
@@ -11,181 +8,60 @@ import {
   SafeAreaView,
   ActivityIndicator,
 } from 'react-native';
-import { QueryClient, QueryClientProvider } from 'react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import FlashMessage from 'react-native-flash-message';
-import * as SplashScreen from 'expo-splash-screen';
-import * as Font from 'expo-font';
+import { SimpleDeviceConfigProvider, useSimpleDeviceConfig, DeviceConfig } from './src/contexts/SimpleDeviceConfig';
+import WorkingSimpleConfig from './src/components/working_simple_config';
+import SimpleVisitorApp from './src/components/SimpleVisitorApp';
 
-// Import your components
-import VisitorApp from './src/components/visitor_app_main';
-import FormBuilder from './src/components/form_builder_component';
-import AnalyticsDashboard from './src/screens/analytics_dashboard';
-import  VisitorHistoryScreen from './src/screens/enhanced_visitor_history';
-import { SettingsScreen } from './src/screens/additional_screens';
+function AppContent() {
+  const { config, isConfigured, isLoading, setConfig } = useSimpleDeviceConfig();
 
-// Icons (you can replace with your preferred icon library)
-const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => (
-  <View style={[styles.tabIcon, focused && styles.tabIconFocused]}>
-    <Text style={[styles.tabIconText, focused && styles.tabIconTextFocused]}>
-      {name.charAt(0).toUpperCase()}
-    </Text>
-  </View>
-);
-
-// Navigation setup
-const Tab = createBottomTabNavigator();
-const Stack = createStackNavigator();
-
-// Query client for React Query
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 2,
-      staleTime: 1000 * 60 * 5, // 5 minutes
-    },
-  },
-});
-
-// Prevent splash screen from auto-hiding
-SplashScreen.preventAutoHideAsync();
-
-function MainTabs() {
-  return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused }) => (
-          <TabIcon name={route.name} focused={focused} />
-        ),
-        tabBarActiveTintColor: '#2563eb',
-        tabBarInactiveTintColor: '#6b7280',
-        tabBarStyle: {
-          backgroundColor: 'white',
-          borderTopWidth: 1,
-          borderTopColor: '#e5e7eb',
-          paddingBottom: Platform.OS === 'ios' ? 20 : 5,
-          height: Platform.OS === 'ios' ? 85 : 65,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '500',
-        },
-        headerStyle: {
-          backgroundColor: '#2563eb',
-        },
-        headerTintColor: 'white',
-        headerTitleStyle: {
-          fontWeight: '600',
-        },
-      })}
-    >
-      <Tab.Screen
-        name="Check-in"
-        component={VisitorApp}
-        options={{
-          title: 'Visitor Check-in',
-          headerShown: false, // VisitorApp has its own header
-        }}
-      />
-      <Tab.Screen
-        name="History"
-        component={VisitorHistoryScreen}
-        options={{
-          title: 'Visitor History',
-        }}
-      />
-      <Tab.Screen
-        name="Analytics"
-        component={AnalyticsDashboard}
-        options={{
-          title: 'Analytics',
-        }}
-      />
-      <Tab.Screen
-        name="Settings"
-        component={SettingsScreen}
-        options={{
-          title: 'Settings',
-        }}
-      />
-    </Tab.Navigator>
-  );
-}
-
-function AppNavigator() {
-  return (
-    <Stack.Navigator>
-      <Stack.Screen
-        name="Main"
-        component={MainTabs}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="FormBuilder"
-        component={FormBuilder}
-        options={{
-          title: 'Form Builder',
-          presentation: 'modal',
-          headerStyle: {
-            backgroundColor: '#2563eb',
-          },
-          headerTintColor: 'white',
-        }}
-      />
-    </Stack.Navigator>
-  );
-}
-
-export default function App() {
-  const [appIsReady, setAppIsReady] = useState(false);
-
-  useEffect(() => {
-    async function prepare() {
-      try {
-        // Pre-load fonts, make any API calls you need to do here
-        await Font.loadAsync({
-          // Add any custom fonts here
-        });
-
-        // Artificially delay for demonstration
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      } catch (e) {
-        console.warn(e);
-      } finally {
-        setAppIsReady(true);
-      }
+  const handleConfigComplete = async (newConfig: DeviceConfig) => {
+    try {
+      await setConfig(newConfig);
+    } catch (error) {
+      console.error('Failed to save configuration:', error);
     }
+  };
 
-    prepare();
-  }, []);
-
-  const onLayoutRootView = React.useCallback(async () => {
-    if (appIsReady) {
-      await SplashScreen.hideAsync();
-    }
-  }, [appIsReady]);
-
-  if (!appIsReady) {
+  if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={styles.container}>
         <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.loadingText}>Loading Visitor Management...</Text>
+        <Text style={styles.loadingText}>Loading configuration...</Text>
       </View>
+    );
+  }
+
+  if (!isConfigured) {
+    return (
+      <GestureHandlerRootView style={styles.container}>
+        <SafeAreaView style={styles.container}>
+          <WorkingSimpleConfig onConfigComplete={handleConfigComplete} />
+          <StatusBar style="auto" />
+          <FlashMessage position="top" />
+        </SafeAreaView>
+      </GestureHandlerRootView>
     );
   }
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      <QueryClientProvider client={queryClient}>
-        <SafeAreaView style={styles.container} onLayout={onLayoutRootView}>
-          <NavigationContainer>
-            <AppNavigator />
-          </NavigationContainer>
-          <StatusBar style="auto" />
-          <FlashMessage position="top" />
-        </SafeAreaView>
-      </QueryClientProvider>
+      <SafeAreaView style={styles.container}>
+        <SimpleVisitorApp />
+        <StatusBar style="auto" />
+        <FlashMessage position="top" />
+      </SafeAreaView>
     </GestureHandlerRootView>
+  );
+}
+
+export default function App() {
+  return (
+    <SimpleDeviceConfigProvider>
+      <AppContent />
+    </SimpleDeviceConfigProvider>
   );
 }
 
@@ -194,34 +70,89 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  loadingContainer: {
+  header: {
+    backgroundColor: '#2563eb',
+    padding: 20,
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#e0e7ff',
+    textAlign: 'center',
+  },
+  form: {
+    padding: 20,
+  },
+  inputGroup: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: 'white',
+  },
+  button: {
+    backgroundColor: '#2563eb',
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  content: {
     flex: 1,
+    padding: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+  },
+  welcome: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#16a34a',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  info: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 40,
+  },
+  resetButton: {
+    backgroundColor: '#dc2626',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  resetButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '500',
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
     color: '#6b7280',
-  },
-  tabIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#f3f4f6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  tabIconFocused: {
-    backgroundColor: '#2563eb',
-  },
-  tabIconText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6b7280',
-  },
-  tabIconTextFocused: {
-    color: 'white',
+    textAlign: 'center',
   },
 });

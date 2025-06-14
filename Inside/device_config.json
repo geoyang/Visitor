@@ -1,0 +1,124 @@
+{
+  "deviceConfiguration": {
+    "serverUrl": "http://localhost:8000",
+    "companyId": "",
+    "locationId": "",
+    "deviceId": "",
+    "deviceName": "Visitor Check-in Device",
+    "deviceType": "tablet",
+    "autoConfiguration": false,
+    "settings": {
+      "enableCamera": true,
+      "enableLocation": true,
+      "enableNotifications": true,
+      "enableQRScanner": true,
+      "autoPrintBadges": false,
+      "requirePhoto": true,
+      "requireSignature": false,
+      "enableMultipleVisitors": true,
+      "sessionTimeout": 300,
+      "theme": {
+        "primaryColor": "#2563eb",
+        "backgroundColor": "#f5f5f5",
+        "textColor": "#1f2937"
+      }
+    }
+  },
+  "quickSetupProfiles": [
+    {
+      "name": "Reception Desk",
+      "description": "Standard reception desk configuration",
+      "deviceType": "tablet",
+      "settings": {
+        "enableCamera": true,
+        "requirePhoto": true,
+        "autoPrintBadges": true,
+        "enableNotifications": true,
+        "requireSignature": false
+      }
+    },
+    {
+      "name": "Security Checkpoint", 
+      "description": "High security area configuration",
+      "deviceType": "desktop",
+      "settings": {
+        "enableCamera": true,
+        "requirePhoto": true,
+        "requireSignature": true,
+        "autoPrintBadges": true,
+        "enableLocation": true,
+        "sessionTimeout": 180
+      }
+    },
+    {
+      "name": "Meeting Room Kiosk",
+      "description": "Simple meeting room check-in",
+      "deviceType": "kiosk",
+      "settings": {
+        "enableCamera": false,
+        "requirePhoto": false,
+        "requireSignature": false,
+        "autoPrintBadges": false,
+        "enableMultipleVisitors": false,
+        "sessionTimeout": 120
+      }
+    },
+    {
+      "name": "Mobile Check-in",
+      "description": "Mobile device configuration",
+      "deviceType": "mobile",
+      "settings": {
+        "enableCamera": true,
+        "requirePhoto": true,
+        "enableLocation": true,
+        "enableNotifications": true,
+        "sessionTimeout": 600
+      }
+    }
+  ],
+  "apiEndpoints": {
+    "health": "/health",
+    "companies": "/companies",
+    "locations": "/locations",
+    "devices": "/devices",
+    "visitors": "/visitors",
+    "forms": "/forms",
+    "analytics": "/analytics"
+  },
+  "features": {
+    "enableOfflineMode": true,
+    "enablePushNotifications": true,
+    "enableAnalytics": true,
+    "enableFormBuilder": true,
+    "enableQRCodeGeneration": true,
+    "enableBadgePrinting": false,
+    "enableVideoRecording": false,
+    "enableBiometricAuth": false
+  },
+  "security": {
+    "enableEncryption": true,
+    "sessionTimeoutMinutes": 30,
+    "maxLoginAttempts": 3,
+    "requireDevicePin": false,
+    "enableAuditLog": true
+  },
+  "ui": {
+    "showCompanyLogo": true,
+    "showWelcomeMessage": true,
+    "enableCustomBranding": true,
+    "language": "en",
+    "dateFormat": "MM/DD/YYYY",
+    "timeFormat": "12h"
+  },
+  "instructions": {
+    "setup": [
+      "1. Fill in your server URL (e.g., http://your-server.com:8000)",
+      "2. Get your Company ID from the admin dashboard",
+      "3. Get your Location ID from the admin dashboard", 
+      "4. Create a device in the admin dashboard and get the Device ID",
+      "5. Save this file and restart the app"
+    ],
+    "adminDashboard": "Access the admin dashboard at {serverUrl}/admin to manage companies, locations, and devices",
+    "support": "For support, contact your system administrator or visit the documentation"
+  }
+}
