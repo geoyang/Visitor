@@ -46,8 +46,12 @@ const CompaniesPage: React.FC = () => {
   };
 
   const filteredCompanies = companies.filter(company => {
-    const matchesSearch = company.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (company.domain && company.domain.toLowerCase().includes(searchTerm.toLowerCase()));
+    // Ensure searchTerm and company.name are strings
+    const search = (searchTerm || '').toLowerCase();
+    const companyName = (company.name || '').toLowerCase();
+    const companyDomain = (company.domain || '').toLowerCase();
+    
+    const matchesSearch = companyName.includes(search) || companyDomain.includes(search);
     const matchesFilter = filterStatus === 'all' || company.status === filterStatus;
     return matchesSearch && matchesFilter;
   });

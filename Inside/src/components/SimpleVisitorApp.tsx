@@ -41,6 +41,7 @@ function CheckInScreen() {
     try {
       const visitorData = {
         form_id: "default",
+        location_id: config.locationId,
         data: {
           first_name: visitorName.split(' ')[0] || visitorName,
           last_name: visitorName.split(' ').slice(1).join(' ') || '',
@@ -55,11 +56,17 @@ function CheckInScreen() {
         status: "checked_in"
       };
 
+      // Prepare headers with auth token if available
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (config.authToken) {
+        headers['Authorization'] = `Bearer ${config.authToken}`;
+      }
+
       const response = await fetch(`${config.serverUrl}/visitors`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify(visitorData),
       });
 
@@ -92,7 +99,11 @@ function CheckInScreen() {
     <ScrollView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Visitor Check-in</Text>
-        <Text style={styles.subtitle}>Welcome! Please fill in your details</Text>
+        <Text style={styles.subtitle}>
+          Welcome to {config?.companyName || 'our company'}
+          {config?.locationName ? ` at ${config.locationName}` : ''}!
+          {'\n'}Please fill in your details
+        </Text>
       </View>
 
       <View style={styles.form}>
@@ -171,7 +182,16 @@ function HistoryScreen() {
 
     try {
       setLoading(true);
-      const response = await fetch(`${config.serverUrl}/visitors`);
+      
+      // Prepare headers with auth token if available
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (config.authToken) {
+        headers['Authorization'] = `Bearer ${config.authToken}`;
+      }
+
+      const response = await fetch(`${config.serverUrl}/visitors`, { headers });
       if (response.ok) {
         const data = await response.json();
         setVisitors(data);
@@ -266,8 +286,17 @@ function AnalyticsScreen() {
 
     try {
       setLoading(true);
+      
+      // Prepare headers with auth token if available
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (config.authToken) {
+        headers['Authorization'] = `Bearer ${config.authToken}`;
+      }
+
       // Fetch visitors to calculate analytics
-      const response = await fetch(`${config.serverUrl}/visitors`);
+      const response = await fetch(`${config.serverUrl}/visitors`, { headers });
       if (response.ok) {
         const visitors = await response.json();
         calculateAnalytics(visitors);
@@ -352,7 +381,20 @@ function AnalyticsScreen() {
 
 // Simple Settings Screen
 function SettingsScreen() {
-  const { config, clearConfig } = useSimpleDeviceConfig();
+  const { config, clearConfig, refreshConfig } = useSimpleDeviceConfig();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    try {
+      setRefreshing(true);
+      await refreshConfig();
+      Alert.alert('Success', 'Configuration refreshed successfully');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to refresh configuration');
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const handleReset = () => {
     Alert.alert(
@@ -386,13 +428,13 @@ function SettingsScreen() {
         </View>
 
         <View style={styles.settingItem}>
-          <Text style={styles.settingLabel}>Company ID</Text>
-          <Text style={styles.settingValue}>{config?.companyId || 'Not configured'}</Text>
+          <Text style={styles.settingLabel}>Company Name</Text>
+          <Text style={styles.settingValue}>{config?.companyName || 'Not configured'}</Text>
         </View>
 
         <View style={styles.settingItem}>
-          <Text style={styles.settingLabel}>Location ID</Text>
-          <Text style={styles.settingValue}>{config?.locationId || 'Not configured'}</Text>
+          <Text style={styles.settingLabel}>Location Name</Text>
+          <Text style={styles.settingValue}>{config?.locationName || 'Not configured'}</Text>
         </View>
 
         <View style={styles.settingItem}>
@@ -404,6 +446,18 @@ function SettingsScreen() {
           <Text style={styles.settingLabel}>Status</Text>
           <Text style={[styles.settingValue, styles.activeStatus]}>Active</Text>
         </View>
+
+        <TouchableOpacity 
+          style={[styles.resetButton, styles.refreshButton]} 
+          onPress={handleRefresh}
+          disabled={refreshing}
+        >
+          {refreshing ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.resetButtonText}>Refresh Configuration</Text>
+          )}
+        </TouchableOpacity>
 
         <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
           <Text style={styles.resetButtonText}>Reset Configuration</Text>
@@ -719,6 +773,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 20,
+  },
+  refreshButton: {
+    backgroundColor: '#2563eb',
+    marginTop: 10,
   },
   resetButtonText: {
     color: 'white',

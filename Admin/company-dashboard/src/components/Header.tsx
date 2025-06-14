@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { 
   Bars3Icon, 
@@ -10,17 +11,88 @@ import {
 
 interface HeaderProps {
   toggleSidebar: () => void;
+  onLogout?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
+const Header: React.FC<HeaderProps> = ({ toggleSidebar, onLogout }) => {
   const [isDark, setIsDark] = React.useState(false);
+  const [showUserMenu, setShowUserMenu] = React.useState(false);
+  const [userInfo, setUserInfo] = React.useState<any>(null);
+  const [buttonRect, setButtonRect] = React.useState<DOMRect | null>(null);
+  const buttonRef = React.useRef<HTMLButtonElement>(null);
+
+  React.useEffect(() => {
+    // Fetch current user info
+    const fetchUserInfo = async () => {
+      try {
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+          const response = await fetch('http://localhost:8000/auth/me', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          if (response.ok) {
+            const userData = await response.json();
+            setUserInfo(userData);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch user info:', error);
+      }
+    };
+
+    fetchUserInfo();
+  }, []);
+
+  // Close dropdown when pressing escape
+  React.useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && showUserMenu) {
+        setShowUserMenu(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [showUserMenu]);
+
+  const handleToggleUserMenu = () => {
+    if (!showUserMenu && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setButtonRect(rect);
+    }
+    setShowUserMenu(!showUserMenu);
+  };
+
+  // Update button position on scroll/resize
+  React.useEffect(() => {
+    const updatePosition = () => {
+      if (showUserMenu && buttonRef.current) {
+        const rect = buttonRef.current.getBoundingClientRect();
+        setButtonRect(rect);
+      }
+    };
+
+    if (showUserMenu) {
+      window.addEventListener('scroll', updatePosition, true);
+      window.addEventListener('resize', updatePosition);
+      return () => {
+        window.removeEventListener('scroll', updatePosition, true);
+        window.removeEventListener('resize', updatePosition);
+      };
+    }
+  }, [showUserMenu]);
 
   return (
-    <motion.header
-      initial={{ opacity: 0, y: -20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="glass-effect border-b border-gray-200/50 px-6 py-4"
-    >
+    <>
+      <motion.header
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass-effect border-b border-gray-200/50 px-6 py-4"
+      >
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <motion.button
@@ -97,24 +169,104 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.3 }}
             className="relative"
+            style={{ zIndex: 10000 }}
           >
             <motion.button
+              ref={buttonRef}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
+              onClick={handleToggleUserMenu}
               className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-100/70 transition-colors duration-200"
             >
-              <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
-                <span className="text-white font-medium text-sm">A</span>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                userInfo?.role === 'super_admin' 
+                  ? 'bg-gradient-to-br from-red-500 to-orange-500' 
+                  : 'bg-gradient-to-br from-purple-500 to-pink-500'
+              }`}>
+                <span className="text-white font-medium text-sm">
+                  {userInfo?.role === 'super_admin' ? 'SA' : 'A'}
+                </span>
               </div>
               <div className="hidden md:block text-left">
-                <p className="text-sm font-medium text-gray-900">Administrator</p>
-                <p className="text-xs text-gray-500">Super Admin</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {userInfo?.name || 'Administrator'}
+                </p>
+                <p className="text-xs text-gray-500">
+                  {userInfo?.role === 'super_admin' ? 'Super Admin' : 'Company Admin'}
+                </p>
               </div>
             </motion.button>
+
           </motion.div>
         </div>
       </div>
-    </motion.header>
+      </motion.header>
+      
+      {showUserMenu && buttonRect && createPortal(
+      <>
+        {/* Backdrop for click-outside detection */}
+        <div 
+          className="fixed inset-0 z-[99999]"
+          onClick={() => setShowUserMenu(false)}
+        />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: -10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: -10 }}
+          className="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-1 w-48 z-[999999]"
+          style={{
+            top: buttonRect.bottom + 8,
+            right: window.innerWidth - buttonRect.right,
+            zIndex: 999999
+          }}
+        >
+          <div className="px-4 py-2 border-b border-gray-100">
+            <p className="text-sm font-medium text-gray-900">
+              {userInfo?.name || 'Account'}
+            </p>
+            <p className="text-xs text-gray-500">
+              {userInfo?.account_email || 'Manage your account'}
+            </p>
+            {userInfo?.role === 'super_admin' && (
+              <span className="inline-block mt-1 px-2 py-1 text-xs bg-red-100 text-red-800 rounded">
+                Super Admin
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => {
+              setShowUserMenu(false);
+              // Add profile action here
+            }}
+            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            Profile Settings
+          </button>
+          <button
+            onClick={() => {
+              setShowUserMenu(false);
+              // Add company settings action here
+            }}
+            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            Company Settings
+          </button>
+          <div className="border-t border-gray-100 mt-1">
+            <button
+              onClick={() => {
+                setShowUserMenu(false);
+                onLogout?.();
+              }}
+              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+            >
+              Sign Out
+            </button>
+          </div>
+        </motion.div>
+      </>,
+      document.body
+      )}
+    </>
   );
 };
 

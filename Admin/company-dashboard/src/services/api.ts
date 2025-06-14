@@ -14,6 +14,12 @@ export interface Company {
   active_visitors_count: number;
   users_count?: number;
   active_users_count?: number;
+  // Account fields
+  account_email?: string;
+  email_verified?: boolean;
+  role?: 'super_admin' | 'company_admin';
+  registration_date?: string;
+  last_login?: string;
   created_at: string;
   updated_at?: string;
 }
@@ -28,6 +34,9 @@ export interface Location {
   longitude?: number;
   timezone?: string;
   status: 'active' | 'inactive' | 'maintenance';
+  subscription_id?: string;
+  subscription_status?: 'active' | 'canceled' | 'past_due' | 'unpaid' | 'trialing' | 'incomplete';
+  subscription_plan?: 'basic' | 'professional' | 'enterprise';
   settings?: Record<string, any>;
   working_hours?: Record<string, any>;
   contact_info?: {
@@ -111,13 +120,60 @@ export interface CompanyAnalytics {
   active_users?: number;
 }
 
+export interface Subscription {
+  id: string;
+  company_id: string;
+  location_id?: string;  // Made optional - can be assigned later
+  location_name?: string;
+  plan: 'basic' | 'professional' | 'enterprise';
+  status: 'active' | 'canceled' | 'past_due' | 'unpaid' | 'trialing' | 'incomplete';
+  stripe_subscription_id?: string;
+  stripe_customer_id?: string;
+  stripe_price_id: string;
+  current_period_start?: string;
+  current_period_end?: string;
+  trial_end?: string;
+  cancel_at_period_end: boolean;
+  canceled_at?: string;
+  monthly_price: number;
+  currency: string;
+  metadata?: Record<string, any>;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface SubscriptionCreate {
+  location_id?: string;  // Made optional - can be assigned later
+  plan: 'basic' | 'professional' | 'enterprise';
+  price_id: string;
+  payment_method_id?: string;
+}
+
+export interface SubscriptionUpdate {
+  plan?: 'basic' | 'professional' | 'enterprise';
+  cancel_at_period_end?: boolean;
+}
+
 class ApiService {
+  private getAuthHeaders(): Record<string, string> {
+    const token = localStorage.getItem('auth_token');
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    return headers;
+  }
+
   private async fetchWithErrorHandling(url: string, options?: RequestInit) {
     try {
-      // Ensure Content-Type is always set correctly for JSON requests
+      // Ensure Content-Type and Authorization headers are always set correctly
       const headers = {
+        ...this.getAuthHeaders(),
         ...options?.headers,
-        'Content-Type': 'application/json',
       };
       
       const response = await fetch(`${API_BASE_URL}${url}`, {
@@ -126,7 +182,24 @@ class ApiService {
       });
 
       if (!response.ok) {
-        console.error(`HTTP ${response.status} error for ${url}:`, await response.text());
+        const errorData = await response.text();
+        console.error(`HTTP ${response.status} error for ${url}:`, errorData);
+        
+        // Handle token expiration
+        if (response.status === 401) {
+          try {
+            const errorJson = JSON.parse(errorData);
+            if (errorJson.error_code === 'TOKEN_EXPIRED') {
+              console.log('Token expired, redirecting to login...');
+              localStorage.removeItem('auth_token');
+              window.location.href = '/login';
+              return;
+            }
+          } catch (parseError) {
+            // If parsing fails, treat as regular 401 error
+          }
+        }
+        
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
@@ -319,6 +392,45 @@ class ApiService {
   // Health check
   async healthCheck(): Promise<{ status: string; database: string }> {
     return this.fetchWithErrorHandling('/health');
+  }
+
+  // Subscriptions
+  async getSubscriptions(): Promise<Subscription[]> {
+    try {
+      const subscriptions = await this.fetchWithErrorHandling('/subscriptions');
+      return Array.isArray(subscriptions) ? subscriptions : [subscriptions];
+    } catch (error) {
+      console.error('Error fetching subscriptions:', error);
+      return [];
+    }
+  }
+
+  async getSubscription(id: string): Promise<Subscription> {
+    return this.fetchWithErrorHandling(`/subscriptions/${id}`);
+  }
+
+  async createSubscription(data: SubscriptionCreate): Promise<Subscription> {
+    return this.fetchWithErrorHandling('/subscriptions', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async updateSubscription(id: string, data: SubscriptionUpdate): Promise<Subscription> {
+    return this.fetchWithErrorHandling(`/subscriptions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async cancelSubscription(id: string): Promise<void> {
+    await this.fetchWithErrorHandling(`/subscriptions/${id}/cancel`, {
+      method: 'POST'
+    });
+  }
+
+  async getStripeConfig(): Promise<{ publishable_key: string }> {
+    return this.fetchWithErrorHandling('/stripe/config');
   }
 }
 

@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { XMarkIcon } from '@heroicons/react/24/outline';
-import { type Company } from '../services/api';
+import { XMarkIcon, CreditCardIcon } from '@heroicons/react/24/outline';
+import { type Company, type Subscription, apiService } from '../services/api';
 
 interface AddLocationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  companies: Company[];
   onSave: (companyId: string, locationData: {
     name: string;
     address: string;
+    subscription_id: string;
     latitude?: number;
     longitude?: number;
     timezone?: string;
@@ -21,13 +21,13 @@ interface AddLocationModalProps {
 const AddLocationModal: React.FC<AddLocationModalProps> = ({
   isOpen,
   onClose,
-  companies,
   onSave
 }) => {
   const [formData, setFormData] = useState({
     name: '',
     address: '',
     company_id: '',
+    subscription_id: '',
     latitude: '',
     longitude: '',
     timezone: 'UTC',
@@ -38,11 +38,90 @@ const AddLocationModal: React.FC<AddLocationModalProps> = ({
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [availableSubscriptions, setAvailableSubscriptions] = useState<Subscription[]>([]);
+  const [loadingSubscriptions, setLoadingSubscriptions] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+
+  // Fetch current user info and auto-select company for company admins
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      if (!isOpen) return;
+      
+      setLoadingUser(true);
+      try {
+        const response = await fetch('http://localhost:8000/auth/me', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const userData = {
+            ...data.user,
+            company_id: data.company?.id
+          };
+          setCurrentUser(userData);
+          
+          // Auto-select company for company admins
+          if (userData.role === 'company_admin' && userData.company_id) {
+            setFormData(prev => ({ ...prev, company_id: userData.company_id }));
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user info:', error);
+      } finally {
+        setLoadingUser(false);
+      }
+    };
+
+    fetchCurrentUser();
+  }, [isOpen]);
+
+  // Fetch available subscriptions when modal opens and user is loaded
+  useEffect(() => {
+    const fetchAvailableSubscriptions = async () => {
+      if (!currentUser?.company_id || loadingUser) {
+        setAvailableSubscriptions([]);
+        return;
+      }
+
+      setLoadingSubscriptions(true);
+      try {
+        const response = await fetch(`http://localhost:8000/companies/${currentUser.company_id}/available-subscriptions`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (response.ok) {
+          const subscriptions = await response.json();
+          setAvailableSubscriptions(subscriptions);
+        } else {
+          setAvailableSubscriptions([]);
+        }
+      } catch (error) {
+        console.error('Error fetching subscriptions:', error);
+        setAvailableSubscriptions([]);
+      } finally {
+        setLoadingSubscriptions(false);
+      }
+    };
+
+    fetchAvailableSubscriptions();
+  }, [currentUser?.company_id, loadingUser]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.company_id) {
-      setError('Please select a company');
+      setError('Company information is required');
+      return;
+    }
+    if (!formData.subscription_id) {
+      setError('Please select a subscription');
       return;
     }
 
@@ -53,6 +132,7 @@ const AddLocationModal: React.FC<AddLocationModalProps> = ({
       const locationData = {
         name: formData.name,
         address: formData.address,
+        subscription_id: formData.subscription_id,
         latitude: formData.latitude ? parseFloat(formData.latitude) : undefined,
         longitude: formData.longitude ? parseFloat(formData.longitude) : undefined,
         timezone: formData.timezone,
@@ -66,11 +146,12 @@ const AddLocationModal: React.FC<AddLocationModalProps> = ({
 
       await onSave(formData.company_id, locationData);
       
-      // Reset form
+      // Reset form but keep company_id for company admins
       setFormData({
         name: '',
         address: '',
-        company_id: '',
+        company_id: currentUser?.role === 'company_admin' ? currentUser.company_id : '',
+        subscription_id: '',
         latitude: '',
         longitude: '',
         timezone: 'UTC',
@@ -134,24 +215,62 @@ const AddLocationModal: React.FC<AddLocationModalProps> = ({
               )}
 
               <form onSubmit={handleSubmit} className="space-y-4">
+
+                {/* Subscription Selection */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Company *
+                    Subscription *
                   </label>
-                  <select
-                    name="company_id"
-                    value={formData.company_id}
-                    onChange={handleChange}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">Select a company</option>
-                    {companies.map(company => (
-                      <option key={company.id} value={company.id}>
-                        {company.name}
-                      </option>
-                    ))}
-                  </select>
+                  {loadingUser ? (
+                    <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 flex items-center">
+                      <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-2"></div>
+                      <span className="text-gray-500">Loading user information...</span>
+                    </div>
+                  ) : (
+                    loadingSubscriptions ? (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 flex items-center">
+                        <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-2"></div>
+                        <span className="text-gray-500">Loading subscriptions...</span>
+                      </div>
+                    ) : availableSubscriptions.length > 0 ? (
+                      <select
+                        name="subscription_id"
+                        value={formData.subscription_id}
+                        onChange={handleChange}
+                        required
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="">Select a subscription</option>
+                        {availableSubscriptions.map(subscription => (
+                          <option key={subscription.id} value={subscription.id}>
+                            {subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1)} Plan - ${subscription.monthly_price}/month
+                            {subscription.status === 'trialing' && ' (Trial)'}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="w-full px-3 py-2 border border-yellow-300 rounded-lg bg-yellow-50">
+                        <div className="flex items-center text-yellow-700">
+                          <CreditCardIcon className="h-4 w-4 mr-2" />
+                          <span className="text-sm">No available subscriptions</span>
+                        </div>
+                        <p className="text-xs text-yellow-600 mt-1">
+                          You need an unassigned subscription to create a location.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            // Navigate to subscriptions page
+                            window.location.href = '/subscriptions';
+                          }}
+                          className="mt-2 text-xs bg-yellow-600 text-white px-3 py-1 rounded hover:bg-yellow-700 transition-colors"
+                        >
+                          Create Subscription
+                        </button>
+                      </div>
+                    )
+                  )}
                 </div>
 
                 <div>

@@ -57,11 +57,17 @@ const LocationsPage: React.FC = () => {
   };
 
   const filteredLocations = locations.filter(location => {
-    const matchesSearch = location.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         location.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (location.company_name && location.company_name.toLowerCase().includes(searchTerm.toLowerCase()));
+    // Ensure all string values are defined
+    const search = (searchTerm || '').toLowerCase();
+    const locationName = (location.name || '').toLowerCase();
+    const locationAddress = (location.address || '').toLowerCase();
+    const locationCompanyName = (location.company_name || '').toLowerCase();
+    
+    const matchesSearch = locationName.includes(search) ||
+                         locationAddress.includes(search) ||
+                         locationCompanyName.includes(search);
     const matchesStatus = filterStatus === 'all' || location.status === filterStatus;
-    const matchesCompany = filterCompany === 'all' || (location.company_name && location.company_name === filterCompany);
+    const matchesCompany = filterCompany === 'all' || location.company_name === filterCompany;
     return matchesSearch && matchesStatus && matchesCompany;
   });
 
@@ -359,7 +365,6 @@ const LocationsPage: React.FC = () => {
       <AddLocationModal
         isOpen={addModalOpen}
         onClose={() => setAddModalOpen(false)}
-        companies={companies}
         onSave={handleCreateLocation}
       />
 

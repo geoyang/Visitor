@@ -8,6 +8,7 @@ import {
   DeviceTabletIcon,
   UserGroupIcon,
   ChartBarIcon,
+  CreditCardIcon,
   Cog6ToothIcon
 } from '@heroicons/react/24/outline';
 
@@ -25,6 +26,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
     { name: 'Locations', href: '/locations', icon: MapPinIcon },
     { name: 'Devices', href: '/devices', icon: DeviceTabletIcon },
     { name: 'Users', href: '/users', icon: UserGroupIcon },
+    { name: 'Subscriptions', href: '/subscriptions', icon: CreditCardIcon },
     { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
   ];
 

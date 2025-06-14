@@ -9,6 +9,7 @@ export interface DeviceConfig {
   deviceId: string;
   deviceName?: string;
   serverUrl: string;
+  authToken?: string;
   settings?: any;
 }
 
@@ -18,6 +19,7 @@ interface SimpleDeviceConfigContextType {
   isLoading: boolean;
   setConfig: (config: DeviceConfig) => Promise<void>;
   clearConfig: () => Promise<void>;
+  refreshConfig: () => Promise<void>;
 }
 
 const SimpleDeviceConfigContext = createContext<SimpleDeviceConfigContextType | undefined>(undefined);
@@ -69,6 +71,76 @@ export const SimpleDeviceConfigProvider: React.FC<SimpleDeviceConfigProviderProp
     }
   };
 
+  const refreshConfig = async () => {
+    if (!config) return;
+    
+    try {
+      console.log('Refreshing config from server...');
+      console.log('Current config:', JSON.stringify(config, null, 2));
+      let companyName = config.companyName || 'Unknown Company';
+      let locationName = config.locationName || 'Unknown Location';
+
+      // Prepare headers with auth token if available
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (config.authToken) {
+        headers['Authorization'] = `Bearer ${config.authToken}`;
+      }
+
+      // Fetch fresh company name
+      try {
+        console.log('Fetching company from:', `${config.serverUrl}/companies/${config.companyId}`);
+        const companyResponse = await fetch(`${config.serverUrl}/companies/${config.companyId}`, { headers });
+        console.log('Company response status:', companyResponse.status);
+        
+        if (companyResponse.ok) {
+          const companyData = await companyResponse.json();
+          console.log('Company data received:', companyData);
+          companyName = companyData.name || companyName;
+          console.log('Updated company name:', companyName);
+        } else {
+          const errorText = await companyResponse.text();
+          console.error('Company fetch failed:', errorText);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch company name:', error);
+      }
+
+      // Fetch fresh location name
+      try {
+        console.log('Fetching location from:', `${config.serverUrl}/locations/${config.locationId}`);
+        const locationResponse = await fetch(`${config.serverUrl}/locations/${config.locationId}`, { headers });
+        console.log('Location response status:', locationResponse.status);
+        
+        if (locationResponse.ok) {
+          const locationData = await locationResponse.json();
+          console.log('Location data received:', locationData);
+          locationName = locationData.name || locationName;
+          console.log('Updated location name:', locationName);
+        } else {
+          const errorText = await locationResponse.text();
+          console.error('Location fetch failed:', errorText);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch location name:', error);
+      }
+
+      // Update config with fresh names
+      const updatedConfig = {
+        ...config,
+        companyName,
+        locationName
+      };
+
+      await setConfig(updatedConfig);
+      console.log('Config refreshed successfully');
+    } catch (error) {
+      console.error('Error refreshing config:', error);
+      throw error;
+    }
+  };
+
   const isConfigured = config !== null;
 
   const contextValue: SimpleDeviceConfigContextType = {
@@ -77,6 +149,7 @@ export const SimpleDeviceConfigProvider: React.FC<SimpleDeviceConfigProviderProp
     isLoading,
     setConfig,
     clearConfig,
+    refreshConfig,
   };
 
   return (

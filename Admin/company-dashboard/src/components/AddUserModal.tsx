@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { type Company } from '../services/api';
@@ -31,10 +31,11 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
     company_id: '',
     role: 'employee' as 'admin' | 'manager' | 'employee' | 'viewer',
     status: 'active' as 'active' | 'inactive' | 'suspended',
-    permissions: [] as string[]
+    permissions: ['read_visitors', 'write_visitors', 'read_devices', 'read_locations', 'read_analytics'] as string[]
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Available permissions
   const availablePermissions = [
@@ -50,6 +51,40 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
     'admin_settings'
   ];
 
+  // Fetch current user info and auto-select company
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      if (!isOpen) return;
+      
+      try {
+        const response = await fetch('http://localhost:8000/auth/me', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const userData = {
+            ...data.user,
+            company_id: data.company?.id
+          };
+          setCurrentUser(userData);
+          
+          // Auto-select company for company admins
+          if (userData.role === 'company_admin' && userData.company_id) {
+            setFormData(prev => ({ ...prev, company_id: userData.company_id }));
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user info:', error);
+      }
+    };
+
+    fetchCurrentUser();
+  }, [isOpen]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -57,15 +92,15 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
 
     try {
       await onSave(formData);
-      // Reset form
+      // Reset form but keep company_id for company admins
       setFormData({
         first_name: '',
         last_name: '',
         email: '',
-        company_id: '',
+        company_id: currentUser?.role === 'company_admin' ? currentUser.company_id : '',
         role: 'employee',
         status: 'active',
-        permissions: []
+        permissions: ['read_visitors', 'write_visitors', 'read_devices', 'read_locations', 'read_analytics']
       });
       onClose();
     } catch (err) {
@@ -77,7 +112,42 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    
+    // Auto-update permissions based on role
+    if (name === 'role') {
+      let newPermissions: string[] = [];
+      switch (value) {
+        case 'admin':
+          newPermissions = availablePermissions; // All permissions
+          break;
+        case 'manager':
+          newPermissions = [
+            'read_visitors', 'write_visitors',
+            'read_devices', 'write_devices',
+            'read_locations', 'write_locations',
+            'read_users', 'read_analytics'
+          ];
+          break;
+        case 'employee':
+          newPermissions = [
+            'read_visitors', 'write_visitors',
+            'read_devices', 'read_locations', 'read_analytics'
+          ];
+          break;
+        case 'viewer':
+          newPermissions = [
+            'read_visitors', 'read_devices', 'read_locations', 'read_analytics'
+          ];
+          break;
+      }
+      setFormData(prev => ({ 
+        ...prev, 
+        [name]: value as 'admin' | 'manager' | 'employee' | 'viewer', 
+        permissions: newPermissions 
+      }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const handlePermissionChange = (permission: string, checked: boolean) => {
@@ -203,25 +273,36 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
 
                 {/* Company and Role */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Company *
-                    </label>
-                    <select
-                      name="company_id"
-                      value={formData.company_id}
-                      onChange={handleChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="">Select a company</option>
-                      {companies.map(company => (
-                        <option key={company.id} value={company.id}>
-                          {company.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {currentUser?.role === 'super_admin' ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Company *
+                      </label>
+                      <select
+                        name="company_id"
+                        value={formData.company_id}
+                        onChange={handleChange}
+                        required
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="">Select a company</option>
+                        {companies.map(company => (
+                          <option key={company.id} value={company.id}>
+                            {company.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Company
+                      </label>
+                      <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50">
+                        {companies.find(c => c.id === formData.company_id)?.name || 'Loading...'}
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -230,7 +311,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
                     <select
                       name="role"
                       value={formData.role}
-                      onChange={handleRoleChange}
+                      onChange={handleChange}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="viewer">Viewer</option>
@@ -262,24 +343,59 @@ const AddUserModal: React.FC<AddUserModalProps> = ({
                   <label className="block text-sm font-medium text-gray-700 mb-3">
                     Permissions
                   </label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {availablePermissions.map(permission => (
-                      <label key={permission} className="flex items-center space-x-2">
-                        <input
-                          type="checkbox"
-                          checked={formData.permissions.includes(permission)}
-                          onChange={(e) => handlePermissionChange(permission, e.target.checked)}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-gray-700">
-                          {permission.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Permissions are automatically set based on role, but can be customized.
-                  </p>
+                  {formData.role === 'employee' ? (
+                    <div className="space-y-2">
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <p className="text-sm font-medium text-gray-700 mb-2">Employee Permissions:</p>
+                        <ul className="space-y-1 text-sm text-gray-600">
+                          <li className="flex items-center">
+                            <span className="text-green-500 mr-2">✓</span>
+                            Read Visitors
+                          </li>
+                          <li className="flex items-center">
+                            <span className="text-green-500 mr-2">✓</span>
+                            Write Visitors
+                          </li>
+                          <li className="flex items-center">
+                            <span className="text-green-500 mr-2">✓</span>
+                            Read Devices
+                          </li>
+                          <li className="flex items-center">
+                            <span className="text-green-500 mr-2">✓</span>
+                            Read Locations
+                          </li>
+                          <li className="flex items-center">
+                            <span className="text-green-500 mr-2">✓</span>
+                            Read Analytics
+                          </li>
+                        </ul>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Employee permissions are fixed and cannot be modified.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {availablePermissions.map(permission => (
+                          <label key={permission} className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              checked={formData.permissions.includes(permission)}
+                              onChange={(e) => handlePermissionChange(permission, e.target.checked)}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">
+                              {permission.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        Permissions are automatically set based on role, but can be customized.
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 <div className="flex space-x-3 pt-4">

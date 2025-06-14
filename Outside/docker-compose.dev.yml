@@ -52,8 +52,8 @@ services:
       - "5678:5678"  # Debug port
     environment:
       # Database
-      MONGODB_URL: mongodb://admin:devpassword@mongodb:27017/visitor_management_dev?authSource=admin
-      DATABASE_NAME: visitor_management_dev
+      MONGODB_URL: mongodb://admin:devpassword@mongodb:27017/visitor_management?authSource=admin
+      DATABASE_NAME: visitor_management
       REDIS_URL: redis://redis:6379/0
       
       # Development settings
@@ -65,7 +65,7 @@ services:
       # Security (Development only!)
       JWT_SECRET_KEY: dev-secret-key-not-for-production
       JWT_ALGORITHM: HS256
-      JWT_EXPIRE_MINUTES: 1440
+      JWT_EXPIRE_MINUTES: 43200
       
       # CORS (Allow all for development)
       CORS_ORIGINS: "*"

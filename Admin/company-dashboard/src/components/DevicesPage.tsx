@@ -70,10 +70,17 @@ const DevicesPage: React.FC = () => {
   const deviceTypes = ['tablet', 'desktop', 'mobile', 'kiosk'];
 
   const filteredDevices = devices.filter(device => {
-    const matchesSearch = device.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         device.device_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (device.company_name && device.company_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                         (device.location_name && device.location_name.toLowerCase().includes(searchTerm.toLowerCase()));
+    // Ensure all string values are defined
+    const search = (searchTerm || '').toLowerCase();
+    const deviceName = (device.name || '').toLowerCase();
+    const deviceId = (device.device_id || '').toLowerCase();
+    const companyName = (device.company_name || '').toLowerCase();
+    const locationName = (device.location_name || '').toLowerCase();
+    
+    const matchesSearch = deviceName.includes(search) ||
+                         deviceId.includes(search) ||
+                         companyName.includes(search) ||
+                         locationName.includes(search);
     const matchesStatus = filterStatus === 'all' || device.status === filterStatus;
     const matchesType = filterType === 'all' || device.device_type === filterType;
     const matchesCompany = filterCompany === 'all' || (device.company_name && device.company_name === filterCompany);

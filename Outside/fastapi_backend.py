@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
@@ -32,6 +32,9 @@ db = client[DATABASE_NAME]
 visitors_collection = db.visitors
 forms_collection = db.forms
 workflows_collection = db.workflows
+companies_collection = db.companies
+locations_collection = db.locations
+devices_collection = db.devices
 
 # Security
 security = HTTPBearer(auto_error=False)
@@ -335,6 +338,90 @@ async def delete_form(form_id: str):
         return {"message": "Form deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+# Multitenant Endpoints (for compatibility with new frontend)
+
+@app.get("/analytics/company")
+async def get_company_analytics(x_company_slug: Optional[str] = Header(None)):
+    """Get company analytics - using mock data for compatibility"""
+    # For backward compatibility, return mock data
+    total_visitors = await visitors_collection.count_documents({})
+    active_visitors = await visitors_collection.count_documents({"status": VisitorStatus.CHECKED_IN})
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_visitors = await visitors_collection.count_documents({
+        "check_in_time": {"$gte": today_start}
+    })
+    
+    return {
+        "company_id": "default_company",
+        "total_visitors": total_visitors,
+        "active_visitors": active_visitors,
+        "today_visitors": today_visitors,
+        "total_locations": 1,
+        "total_devices": 1,
+        "online_devices": 1,
+    }
+
+@app.get("/locations")
+async def get_locations(x_company_slug: Optional[str] = Header(None)):
+    """Get locations - return mock data for compatibility"""
+    return [{
+        "id": "default_location",
+        "company_id": "default_company",
+        "name": "Main Office",
+        "address": "123 Business Ave, Corporate City, CC 12345",
+        "status": "active",
+        "devices_count": 1,
+        "active_visitors_count": await visitors_collection.count_documents({"status": VisitorStatus.CHECKED_IN}),
+        "company_name": "Default Company"
+    }]
+
+@app.get("/devices")
+async def get_devices(
+    x_company_slug: Optional[str] = Header(None),
+    location_id: Optional[str] = None
+):
+    """Get devices - return mock data for compatibility"""
+    return [{
+        "id": "default_device",
+        "company_id": "default_company", 
+        "location_id": "default_location",
+        "name": "Main Tablet",
+        "device_type": "tablet",
+        "device_id": "TABLET-001",
+        "status": "active",
+        "is_online": True,
+        "company_name": "Default Company",
+        "location_name": "Main Office"
+    }]
+
+@app.post("/devices")
+async def create_device(
+    device_data: Dict[str, Any],
+    x_company_slug: Optional[str] = Header(None)
+):
+    """Create device - return mock data for compatibility"""
+    return {
+        "id": "new_device",
+        "company_id": "default_company",
+        "location_id": device_data.get("location_id", "default_location"),
+        "name": device_data.get("name", "New Device"),
+        "device_type": "tablet",
+        "device_id": device_data.get("device_id", "NEW-DEVICE"),
+        "status": "active",
+        "is_online": True,
+        "company_name": "Default Company",
+        "location_name": "Main Office"
+    }
+
+@app.post("/devices/{device_id}/heartbeat")
+async def device_heartbeat(
+    device_id: str,
+    heartbeat_data: Dict[str, Any],
+    x_company_slug: Optional[str] = Header(None)
+):
+    """Device heartbeat - return success for compatibility"""
+    return {"message": "Heartbeat recorded successfully"}
 
 # Workflow endpoints
 @app.post("/workflows", response_model=WorkflowResponse)

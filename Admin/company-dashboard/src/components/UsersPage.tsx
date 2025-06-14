@@ -62,13 +62,20 @@ const UsersPage: React.FC = () => {
   const userRoles = ['admin', 'manager', 'employee', 'viewer'];
 
   const filteredUsers = users.filter(user => {
-    const matchesSearch = user.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (user.company_name && user.company_name.toLowerCase().includes(searchTerm.toLowerCase()));
+    // Ensure all string values are defined
+    const search = (searchTerm || '').toLowerCase();
+    const firstName = (user.first_name || '').toLowerCase();
+    const lastName = (user.last_name || '').toLowerCase();
+    const email = (user.email || '').toLowerCase();
+    const companyName = (user.company_name || '').toLowerCase();
+    
+    const matchesSearch = firstName.includes(search) ||
+                         lastName.includes(search) ||
+                         email.includes(search) ||
+                         companyName.includes(search);
     const matchesStatus = filterStatus === 'all' || user.status === filterStatus;
     const matchesRole = filterRole === 'all' || user.role === filterRole;
-    const matchesCompany = filterCompany === 'all' || (user.company_name && user.company_name === filterCompany);
+    const matchesCompany = filterCompany === 'all' || user.company_name === filterCompany;
     return matchesSearch && matchesStatus && matchesRole && matchesCompany;
   });
 
