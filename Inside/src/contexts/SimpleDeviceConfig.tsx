@@ -9,7 +9,8 @@ export interface DeviceConfig {
   deviceId: string;
   deviceName?: string;
   serverUrl: string;
-  authToken?: string;
+  deviceToken?: string;
+  theme?: 'hightech' | 'lawfirm' | 'metropolitan' | 'zen';
   settings?: any;
 }
 
@@ -18,6 +19,7 @@ interface SimpleDeviceConfigContextType {
   isConfigured: boolean;
   isLoading: boolean;
   setConfig: (config: DeviceConfig) => Promise<void>;
+  updateTheme: (theme: 'hightech' | 'lawfirm' | 'metropolitan' | 'zen') => Promise<void>;
   clearConfig: () => Promise<void>;
   refreshConfig: () => Promise<void>;
 }
@@ -71,6 +73,23 @@ export const SimpleDeviceConfigProvider: React.FC<SimpleDeviceConfigProviderProp
     }
   };
 
+  const updateTheme = async (newTheme: 'hightech' | 'lawfirm' | 'metropolitan' | 'zen') => {
+    if (!config) return;
+    
+    try {
+      const updatedConfig = {
+        ...config,
+        theme: newTheme
+      };
+      
+      await setConfig(updatedConfig);
+      console.log('Theme updated successfully to:', newTheme);
+    } catch (error) {
+      console.error('Error updating theme:', error);
+      throw error;
+    }
+  };
+
   const refreshConfig = async () => {
     if (!config) return;
     
@@ -80,13 +99,9 @@ export const SimpleDeviceConfigProvider: React.FC<SimpleDeviceConfigProviderProp
       let companyName = config.companyName || 'Unknown Company';
       let locationName = config.locationName || 'Unknown Location';
 
-      // Prepare headers with auth token if available
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-      if (config.authToken) {
-        headers['Authorization'] = `Bearer ${config.authToken}`;
-      }
 
       // Fetch fresh company name
       try {
@@ -148,6 +163,7 @@ export const SimpleDeviceConfigProvider: React.FC<SimpleDeviceConfigProviderProp
     isConfigured,
     isLoading,
     setConfig,
+    updateTheme,
     clearConfig,
     refreshConfig,
   };

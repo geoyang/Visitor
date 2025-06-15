@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,22 +9,198 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Dimensions,
+  Animated,
 } from 'react-native';
 // Removing Expo vector icons temporarily to fix font loading issues
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSimpleDeviceConfig } from '../contexts/SimpleDeviceConfig';
+import { ThemeProvider, useTheme } from '../contexts/ThemeContext';
+import { ThemeType } from '../themes/themes';
+import ThemeBackground from './ThemeBackground';
 
 const Tab = createBottomTabNavigator();
 
+// Get device dimensions for responsive design
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const isTablet = screenWidth >= 768; // iPad and larger tablets
+const isLargeTablet = screenWidth >= 1024; // iPad Pro and larger
+
+// Responsive helper functions
+const responsiveWidth = (percentage: number) => {
+  if (isLargeTablet) {
+    // On large tablets, limit max width for better UX
+    return Math.min(screenWidth * (percentage / 100), screenWidth * 0.6);
+  }
+  return screenWidth * (percentage / 100);
+};
+
+const responsiveFontSize = (size: number) => {
+  if (isLargeTablet) return size * 1.3;
+  if (isTablet) return size * 1.1;
+  return size;
+};
+
+const responsivePadding = (size: number) => {
+  if (isLargeTablet) return size * 1.5;
+  if (isTablet) return size * 1.2;
+  return size;
+};
+
+// Welcome Screen with Image Selection
+function WelcomeScreen({ onStartCheckIn, onOpenSettings }: { 
+  onStartCheckIn: () => void;
+  onOpenSettings?: () => void;
+}) {
+  const { config } = useSimpleDeviceConfig();
+  const { theme } = useTheme();
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (onOpenSettings) {
+      // Start a subtle pulse animation for the settings icon
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 2000,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    }
+  }, [pulseAnim, onOpenSettings]);
+
+  const handleImageSelect = () => {
+    onStartCheckIn();
+  };
+
+  const handleSettingsPress = () => {
+    if (onOpenSettings) {
+      onOpenSettings();
+    }
+  };
+
+  const dynamicStyles = createDynamicStyles(theme);
+
+  return (
+    <ThemeBackground theme={theme} style={{ flex: 1 }}>
+      {/* Settings Icon */}
+      {onOpenSettings && (
+        <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+          <TouchableOpacity 
+            style={styles.settingsIcon} 
+            onPress={handleSettingsPress}
+            activeOpacity={0.7}
+          >
+            <View style={styles.settingsGearContainer}>
+              {/* Settings gear icon */}
+              <View style={[styles.settingsGear, { backgroundColor: 'rgba(255, 255, 255, 0.9)' }]} />
+              <View style={[styles.settingsTooth1, { backgroundColor: 'rgba(255, 255, 255, 0.9)' }]} />
+              <View style={[styles.settingsTooth2, { backgroundColor: 'rgba(255, 255, 255, 0.9)' }]} />
+              <View style={[styles.settingsTooth3, { backgroundColor: 'rgba(255, 255, 255, 0.9)' }]} />
+              <View style={[styles.settingsTooth4, { backgroundColor: 'rgba(255, 255, 255, 0.9)' }]} />
+            </View>
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+      
+      <View style={styles.welcomeContent}>
+        {/* Welcome Message */}
+        <View style={styles.welcomeMessageContainer}>
+          <Text style={[
+            dynamicStyles.welcomeTitle, 
+            { 
+              fontFamily: theme.fonts.primary,
+              fontWeight: theme.fonts.weights.bold,
+              color: 'white'
+            }
+          ]}>
+            Welcome to {config?.companyName || 'Our Company'}
+          </Text>
+          {config?.locationName && (
+            <Text style={[
+              dynamicStyles.welcomeSubtitle,
+              {
+                fontFamily: theme.fonts.secondary,
+                fontWeight: theme.fonts.weights.regular,
+                color: 'rgba(255, 255, 255, 0.9)'
+              }
+            ]}>
+              {config.locationName}
+            </Text>
+          )}
+          <Text style={[
+            dynamicStyles.welcomeInstruction,
+            {
+              fontFamily: theme.fonts.secondary,
+              fontWeight: theme.fonts.weights.regular,
+              color: 'rgba(255, 255, 255, 0.8)'
+            }
+          ]}>
+            Please select an option to continue
+          </Text>
+        </View>
+
+        {/* Welcome Cards */}
+        <View style={styles.welcomeCardsContainer}>
+          <View style={styles.imageGrid}>
+            {theme.welcomeImages.map((image) => (
+              <TouchableOpacity
+                key={image.id}
+                style={[
+                  dynamicStyles.imageCard, 
+                  { backgroundColor: image.color },
+                  theme.shadow.medium
+                ]}
+                onPress={handleImageSelect}
+                activeOpacity={0.8}
+              >
+                <Text style={[
+                  dynamicStyles.imageEmoji,
+                  { fontFamily: theme.fonts.primary }
+                ]}>{image.emoji}</Text>
+                <Text style={[
+                  dynamicStyles.imageName,
+                  { 
+                    fontFamily: theme.fonts.primary,
+                    fontWeight: theme.fonts.weights.bold
+                  }
+                ]}>{image.name}</Text>
+                <Text style={[
+                  dynamicStyles.imageDescription,
+                  { 
+                    fontFamily: theme.fonts.secondary,
+                    fontWeight: theme.fonts.weights.regular
+                  }
+                ]}>{image.description}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </View>
+    </ThemeBackground>
+  );
+}
+
 // Simple Visitor Check-in Screen
-function CheckInScreen() {
+function CheckInScreen({ onBackToWelcome }: { onBackToWelcome?: () => void }) {
   const [visitorName, setVisitorName] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [hostName, setHostName] = useState('');
   const [purpose, setPurpose] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { config } = useSimpleDeviceConfig();
+  const { theme } = useTheme();
+  
+  // Workflow execution hook would be added here in production
+  // const { executeWorkflowsForTrigger } = useWorkflowExecution();
 
   const handleCheckIn = async () => {
     if (!visitorName.trim()) {
@@ -56,15 +232,16 @@ function CheckInScreen() {
         status: "checked_in"
       };
 
-      // Prepare headers with auth token if available
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-      if (config.authToken) {
-        headers['Authorization'] = `Bearer ${config.authToken}`;
+
+      // Add device token if available
+      if (config.deviceToken) {
+        headers['X-Device-Token'] = config.deviceToken;
       }
 
-      const response = await fetch(`${config.serverUrl}/visitors`, {
+      const response = await fetch(`${config.serverUrl}/device/visitors`, {
         method: 'POST',
         headers,
         body: JSON.stringify(visitorData),
@@ -74,7 +251,15 @@ function CheckInScreen() {
         Alert.alert(
           'Check-in Successful',
           `Welcome ${visitorName}! You have been checked in.`,
-          [{ text: 'OK', onPress: () => clearForm() }]
+          [{ 
+            text: 'OK', 
+            onPress: () => {
+              clearForm();
+              if (onBackToWelcome) {
+                onBackToWelcome();
+              }
+            }
+          }]
         );
       } else {
         const errorData = await response.text();
@@ -96,17 +281,23 @@ function CheckInScreen() {
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Visitor Check-in</Text>
-        <Text style={styles.subtitle}>
+    <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]} contentContainerStyle={styles.scrollContent}>
+      <View style={[styles.header, { backgroundColor: theme.colors.headerBackground }]}>
+        {onBackToWelcome && (
+          <TouchableOpacity style={styles.backButton} onPress={onBackToWelcome}>
+            <Text style={styles.backButtonText}>← Back</Text>
+          </TouchableOpacity>
+        )}
+        <Text style={[styles.title, { color: 'white' }]}>Visitor Check-in</Text>
+        <Text style={[styles.subtitle, { color: 'rgba(255, 255, 255, 0.9)' }]}>
           Welcome to {config?.companyName || 'our company'}
           {config?.locationName ? ` at ${config.locationName}` : ''}!
           {'\n'}Please fill in your details
         </Text>
       </View>
 
-      <View style={styles.form}>
+      <View style={styles.formContainer}>
+        <View style={styles.form}>
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Full Name *</Text>
           <TextInput
@@ -150,7 +341,11 @@ function CheckInScreen() {
         </View>
 
         <TouchableOpacity 
-          style={[styles.checkInButton, isLoading && styles.buttonDisabled]} 
+          style={[
+            styles.checkInButton, 
+            { backgroundColor: theme.colors.success },
+            isLoading && styles.buttonDisabled
+          ]} 
           onPress={handleCheckIn}
           disabled={isLoading}
         >
@@ -162,6 +357,7 @@ function CheckInScreen() {
         <TouchableOpacity style={styles.clearButton} onPress={clearForm}>
           <Text style={styles.clearButtonText}>Clear Form</Text>
         </TouchableOpacity>
+        </View>
       </View>
     </ScrollView>
   );
@@ -171,6 +367,7 @@ function CheckInScreen() {
 function HistoryScreen() {
   const [visitors, setVisitors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [checkingOut, setCheckingOut] = useState<string | null>(null);
   const { config } = useSimpleDeviceConfig();
 
   useEffect(() => {
@@ -183,15 +380,16 @@ function HistoryScreen() {
     try {
       setLoading(true);
       
-      // Prepare headers with auth token if available
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-      if (config.authToken) {
-        headers['Authorization'] = `Bearer ${config.authToken}`;
+
+      // Add device token if available
+      if (config.deviceToken) {
+        headers['X-Device-Token'] = config.deviceToken;
       }
 
-      const response = await fetch(`${config.serverUrl}/visitors`, { headers });
+      const response = await fetch(`${config.serverUrl}/device/visitors`, { headers });
       if (response.ok) {
         const data = await response.json();
         setVisitors(data);
@@ -203,6 +401,54 @@ function HistoryScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCheckout = async (visitorId: string, visitorName: string) => {
+    if (!config) return;
+
+    Alert.alert(
+      'Checkout Visitor',
+      `Are you sure you want to check out ${visitorName}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Checkout', 
+          onPress: async () => {
+            try {
+              setCheckingOut(visitorId);
+              
+              const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+              };
+
+              // Add device token if available
+              if (config.deviceToken) {
+                headers['X-Device-Token'] = config.deviceToken;
+              }
+
+              const response = await fetch(`${config.serverUrl}/device/visitors/${visitorId}/checkout`, {
+                method: 'POST',
+                headers,
+              });
+
+              if (response.ok) {
+                Alert.alert('Success', `${visitorName} has been checked out successfully.`);
+                // Refresh the visitor list
+                await fetchVisitors();
+              } else {
+                const errorData = await response.text();
+                Alert.alert('Error', `Failed to checkout visitor: ${errorData}`);
+              }
+            } catch (error) {
+              Alert.alert('Error', 'Network error during checkout');
+              console.error('Checkout error:', error);
+            } finally {
+              setCheckingOut(null);
+            }
+          }
+        },
+      ]
+    );
   };
 
   const formatTime = (dateString) => {
@@ -252,11 +498,27 @@ function HistoryScreen() {
                   <Text style={styles.visitorPurpose}>{visitor.data.purpose}</Text>
                 )}
               </View>
-              <View style={[styles.statusBadge, 
-                visitor.check_out_time ? styles.checkedOutBadge : styles.checkedInBadge]}>
-                <Text style={styles.statusText}>
-                  {visitor.check_out_time ? 'Checked Out' : 'Checked In'}
-                </Text>
+              <View style={styles.visitorActions}>
+                <View style={[styles.statusBadge, 
+                  visitor.check_out_time ? styles.checkedOutBadge : styles.checkedInBadge]}>
+                  <Text style={styles.statusText}>
+                    {visitor.check_out_time ? 'Checked Out' : 'Checked In'}
+                  </Text>
+                </View>
+                
+                {!visitor.check_out_time && (
+                  <TouchableOpacity
+                    style={[styles.checkoutButton, checkingOut === visitor.id && styles.buttonDisabled]}
+                    onPress={() => handleCheckout(visitor.id, `${visitor.data?.first_name || ''} ${visitor.data?.last_name || ''}`.trim())}
+                    disabled={checkingOut === visitor.id}
+                  >
+                    {checkingOut === visitor.id ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.checkoutButtonText}>Check Out</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           ))
@@ -287,16 +549,17 @@ function AnalyticsScreen() {
     try {
       setLoading(true);
       
-      // Prepare headers with auth token if available
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
-      if (config.authToken) {
-        headers['Authorization'] = `Bearer ${config.authToken}`;
+
+      // Add device token if available
+      if (config.deviceToken) {
+        headers['X-Device-Token'] = config.deviceToken;
       }
 
       // Fetch visitors to calculate analytics
-      const response = await fetch(`${config.serverUrl}/visitors`, { headers });
+      const response = await fetch(`${config.serverUrl}/device/visitors`, { headers });
       if (response.ok) {
         const visitors = await response.json();
         calculateAnalytics(visitors);
@@ -381,8 +644,22 @@ function AnalyticsScreen() {
 
 // Simple Settings Screen
 function SettingsScreen() {
-  const { config, clearConfig, refreshConfig } = useSimpleDeviceConfig();
+  const { config, clearConfig, refreshConfig, updateTheme } = useSimpleDeviceConfig();
+  const { theme } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
+  const [changingTheme, setChangingTheme] = useState(false);
+
+  const handleThemeChange = async (newTheme: 'hightech' | 'lawfirm' | 'metropolitan' | 'zen') => {
+    try {
+      setChangingTheme(true);
+      await updateTheme(newTheme);
+      Alert.alert('Success', 'Theme updated successfully');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update theme');
+    } finally {
+      setChangingTheme(false);
+    }
+  };
 
   const handleRefresh = async () => {
     try {
@@ -414,41 +691,78 @@ function SettingsScreen() {
     );
   };
 
+  const themeOptions = [
+    { id: 'hightech', name: 'High Tech', emoji: '🚀', color: '#1e40af' },
+    { id: 'lawfirm', name: 'Law Firm', emoji: '⚖️', color: '#7c2d12' },
+    { id: 'metropolitan', name: 'Metropolitan', emoji: '🏙️', color: '#db2777' },
+    { id: 'zen', name: 'Calm Zen', emoji: '🧘', color: '#059669' }
+  ];
+
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Settings</Text>
-        <Text style={styles.subtitle}>Device configuration</Text>
+    <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <View style={[styles.header, { backgroundColor: theme.colors.headerBackground }]}>
+        <Text style={[styles.title, { color: 'white' }]}>Settings</Text>
+        <Text style={[styles.subtitle, { color: 'rgba(255, 255, 255, 0.9)' }]}>Device configuration</Text>
       </View>
 
       <View style={styles.settingsContainer}>
-        <View style={styles.settingItem}>
-          <Text style={styles.settingLabel}>Device ID</Text>
-          <Text style={styles.settingValue}>{config?.deviceId || 'Not configured'}</Text>
+        <View style={[styles.settingItem, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.settingLabel, { color: theme.colors.text }]}>Device ID</Text>
+          <Text style={[styles.settingValue, { color: theme.colors.textSecondary }]}>{config?.deviceId || 'Not configured'}</Text>
         </View>
 
-        <View style={styles.settingItem}>
-          <Text style={styles.settingLabel}>Company Name</Text>
-          <Text style={styles.settingValue}>{config?.companyName || 'Not configured'}</Text>
+        <View style={[styles.settingItem, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.settingLabel, { color: theme.colors.text }]}>Company Name</Text>
+          <Text style={[styles.settingValue, { color: theme.colors.textSecondary }]}>{config?.companyName || 'Not configured'}</Text>
         </View>
 
-        <View style={styles.settingItem}>
-          <Text style={styles.settingLabel}>Location Name</Text>
-          <Text style={styles.settingValue}>{config?.locationName || 'Not configured'}</Text>
+        <View style={[styles.settingItem, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.settingLabel, { color: theme.colors.text }]}>Location Name</Text>
+          <Text style={[styles.settingValue, { color: theme.colors.textSecondary }]}>{config?.locationName || 'Not configured'}</Text>
         </View>
 
-        <View style={styles.settingItem}>
-          <Text style={styles.settingLabel}>Server URL</Text>
-          <Text style={styles.settingValue}>{config?.serverUrl || 'Not configured'}</Text>
+        <View style={[styles.settingItem, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.settingLabel, { color: theme.colors.text }]}>Server URL</Text>
+          <Text style={[styles.settingValue, { color: theme.colors.textSecondary }]}>{config?.serverUrl || 'Not configured'}</Text>
         </View>
 
-        <View style={styles.settingItem}>
-          <Text style={styles.settingLabel}>Status</Text>
-          <Text style={[styles.settingValue, styles.activeStatus]}>Active</Text>
+        <View style={[styles.settingItem, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.settingLabel, { color: theme.colors.text }]}>Status</Text>
+          <Text style={[styles.settingValue, { color: theme.colors.success }]}>Active</Text>
+        </View>
+
+        {/* Theme Selection Section */}
+        <View style={[styles.settingSection, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Visual Theme</Text>
+          <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>Choose your preferred appearance</Text>
+          
+          <View style={styles.themeGrid}>
+            {themeOptions.map((themeOption) => (
+              <TouchableOpacity
+                key={themeOption.id}
+                style={[
+                  styles.themeCard,
+                  { backgroundColor: themeOption.color },
+                  config?.theme === themeOption.id && styles.themeCardSelected,
+                  theme.shadow.small
+                ]}
+                onPress={() => handleThemeChange(themeOption.id as any)}
+                disabled={changingTheme}
+              >
+                <Text style={styles.themeEmoji}>{themeOption.emoji}</Text>
+                <Text style={styles.themeName}>{themeOption.name}</Text>
+                {config?.theme === themeOption.id && (
+                  <View style={styles.selectedIndicator}>
+                    <Text style={styles.selectedText}>✓</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         <TouchableOpacity 
-          style={[styles.resetButton, styles.refreshButton]} 
+          style={[styles.resetButton, styles.refreshButton, { backgroundColor: theme.colors.primary }]} 
           onPress={handleRefresh}
           disabled={refreshing}
         >
@@ -459,11 +773,11 @@ function SettingsScreen() {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+        <TouchableOpacity style={[styles.resetButton, { backgroundColor: theme.colors.error }]} onPress={handleReset}>
           <Text style={styles.resetButtonText}>Reset Configuration</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -527,11 +841,10 @@ const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
   );
 };
 
-// Main Visitor App Component
-export default function SimpleVisitorApp() {
+// Main Visitor App Component with Welcome Screen
+function MainAppTabs({ onBackToWelcome }: { onBackToWelcome: () => void }) {
   return (
-    <NavigationContainer>
-      <Tab.Navigator
+    <Tab.Navigator
         screenOptions={({ route }) => ({
           tabBarIcon: ({ focused }) => (
             <TabIcon name={route.name} focused={focused} />
@@ -560,12 +873,13 @@ export default function SimpleVisitorApp() {
       >
         <Tab.Screen
           name="Check-in"
-          component={CheckInScreen}
           options={{
             title: 'Visitor Check-in',
             headerShown: false,
           }}
-        />
+        >
+          {() => <CheckInScreen onBackToWelcome={onBackToWelcome} />}
+        </Tab.Screen>
         <Tab.Screen
           name="History"
           component={HistoryScreen}
@@ -591,40 +905,241 @@ export default function SimpleVisitorApp() {
           }}
         />
       </Tab.Navigator>
+  );
+}
+
+// Main Visitor App Component
+export default function SimpleVisitorApp() {
+  const { config } = useSimpleDeviceConfig();
+  const [showWelcome, setShowWelcome] = useState(true);
+  const [showSettingsFromWelcome, setShowSettingsFromWelcome] = useState(false);
+
+  const handleStartCheckIn = () => {
+    setShowWelcome(false);
+    setShowSettingsFromWelcome(false);
+  };
+
+  const handleBackToWelcome = () => {
+    setShowWelcome(true);
+    setShowSettingsFromWelcome(false);
+  };
+
+  const handleOpenSettings = () => {
+    setShowWelcome(false);
+    setShowSettingsFromWelcome(true);
+  };
+
+  const selectedTheme: ThemeType = config?.theme || 'hightech';
+
+  return (
+    <ThemeProvider themeType={selectedTheme}>
+      <ThemedApp 
+        showWelcome={showWelcome}
+        showSettingsFromWelcome={showSettingsFromWelcome}
+        onStartCheckIn={handleStartCheckIn}
+        onBackToWelcome={handleBackToWelcome}
+        onOpenSettings={handleOpenSettings}
+      />
+    </ThemeProvider>
+  );
+}
+
+// Themed App Component
+function ThemedApp({ 
+  showWelcome, 
+  showSettingsFromWelcome,
+  onStartCheckIn, 
+  onBackToWelcome,
+  onOpenSettings
+}: {
+  showWelcome: boolean;
+  showSettingsFromWelcome: boolean;
+  onStartCheckIn: () => void;
+  onBackToWelcome: () => void;
+  onOpenSettings: () => void;
+}) {
+  if (showWelcome) {
+    return <WelcomeScreen onStartCheckIn={onStartCheckIn} onOpenSettings={onOpenSettings} />;
+  }
+
+  if (showSettingsFromWelcome) {
+    return (
+      <NavigationContainer>
+        <Tab.Navigator
+          initialRouteName="Settings"
+          screenOptions={({ route }) => ({
+            tabBarIcon: ({ focused }) => (
+              <TabIcon name={route.name} focused={focused} />
+            ),
+            tabBarActiveTintColor: '#2563eb',
+            tabBarInactiveTintColor: '#6b7280',
+            tabBarStyle: {
+              backgroundColor: 'white',
+              borderTopWidth: 1,
+              borderTopColor: '#e5e7eb',
+              paddingBottom: Platform.OS === 'ios' ? 20 : 5,
+              height: Platform.OS === 'ios' ? 85 : 65,
+            },
+            tabBarLabelStyle: {
+              fontSize: 12,
+              fontWeight: '500',
+            },
+            headerStyle: {
+              backgroundColor: '#2563eb',
+            },
+            headerTintColor: 'white',
+            headerTitleStyle: {
+              fontWeight: '600',
+            },
+          })}
+        >
+          <Tab.Screen
+            name="Settings"
+            component={SettingsScreen}
+            options={{
+              title: 'Settings',
+              headerShown: false,
+            }}
+          />
+          <Tab.Screen
+            name="Check-in"
+            options={{
+              title: 'Visitor Check-in',
+              headerShown: false,
+            }}
+          >
+            {() => <CheckInScreen onBackToWelcome={onBackToWelcome} />}
+          </Tab.Screen>
+          <Tab.Screen
+            name="History"
+            component={HistoryScreen}
+            options={{
+              title: 'Visitor History',
+              headerShown: false,
+            }}
+          />
+          <Tab.Screen
+            name="Analytics"
+            component={AnalyticsScreen}
+            options={{
+              title: 'Analytics',
+              headerShown: false,
+            }}
+          />
+        </Tab.Navigator>
+      </NavigationContainer>
+    );
+  }
+
+  return (
+    <NavigationContainer>
+      <MainAppTabs onBackToWelcome={onBackToWelcome} />
     </NavigationContainer>
   );
 }
+
+// Dynamic styles that change based on theme
+const createDynamicStyles = (theme: any) => StyleSheet.create({
+  welcomeTitle: {
+    fontSize: responsiveFontSize(isTablet ? 42 : 32),
+    textAlign: 'center',
+    marginBottom: responsivePadding(8),
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  welcomeSubtitle: {
+    fontSize: responsiveFontSize(isTablet ? 24 : 20),
+    textAlign: 'center',
+    marginBottom: responsivePadding(16),
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  welcomeInstruction: {
+    fontSize: responsiveFontSize(isTablet ? 18 : 16),
+    textAlign: 'center',
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  imageCard: {
+    width: isLargeTablet ? '30%' : isTablet ? '45%' : '48%',
+    aspectRatio: 1,
+    borderRadius: theme.borderRadius.large,
+    marginBottom: responsivePadding(16),
+    marginHorizontal: isLargeTablet ? '1.5%' : 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: isTablet ? 160 : 140,
+  },
+  imageEmoji: {
+    fontSize: responsiveFontSize(48),
+    marginBottom: responsivePadding(12),
+  },
+  imageName: {
+    color: 'white',
+    fontSize: responsiveFontSize(18),
+    marginBottom: responsivePadding(8),
+    textAlign: 'center',
+  },
+  imageDescription: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: responsiveFontSize(12),
+    textAlign: 'center',
+    paddingHorizontal: responsivePadding(8),
+    lineHeight: responsiveFontSize(16),
+  },
+});
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
+  scrollContent: {
+    flexGrow: 1,
+    ...(isTablet && {
+      justifyContent: 'flex-start',
+      alignItems: 'center',
+    }),
+  },
   header: {
     backgroundColor: '#2563eb',
-    padding: 20,
-    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    padding: responsivePadding(20),
+    paddingTop: Platform.OS === 'ios' ? responsivePadding(50) : responsivePadding(20),
     alignItems: 'center',
+    width: '100%',
   },
   title: {
-    fontSize: 24,
+    fontSize: responsiveFontSize(24),
     fontWeight: 'bold',
     color: 'white',
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: responsiveFontSize(16),
     color: '#e0e7ff',
     textAlign: 'center',
+    maxWidth: isTablet ? 600 : '100%',
+    lineHeight: responsiveFontSize(22),
+  },
+  formContainer: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    paddingHorizontal: isTablet ? 40 : 0,
   },
   form: {
-    padding: 20,
+    padding: responsivePadding(20),
+    width: isTablet ? Math.min(600, screenWidth * 0.8) : '100%',
+    maxWidth: 600,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: responsivePadding(20),
   },
   label: {
-    fontSize: 16,
+    fontSize: responsiveFontSize(16),
     fontWeight: '500',
     color: '#374151',
     marginBottom: 8,
@@ -633,41 +1148,89 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#d1d5db',
     borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    padding: responsivePadding(12),
+    fontSize: responsiveFontSize(16),
     backgroundColor: 'white',
+    minHeight: isTablet ? 50 : 44,
   },
   checkInButton: {
     backgroundColor: '#16a34a',
-    padding: 16,
+    padding: responsivePadding(16),
     borderRadius: 8,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: responsivePadding(20),
     marginBottom: 10,
+    minHeight: isTablet ? 56 : 48,
   },
   checkInButtonText: {
     color: 'white',
-    fontSize: 18,
+    fontSize: responsiveFontSize(18),
     fontWeight: '600',
   },
   clearButton: {
     backgroundColor: '#6b7280',
-    padding: 12,
+    padding: responsivePadding(12),
     borderRadius: 8,
     alignItems: 'center',
+    minHeight: isTablet ? 48 : 40,
   },
   clearButtonText: {
     color: 'white',
-    fontSize: 16,
+    fontSize: responsiveFontSize(16),
     fontWeight: '500',
   },
+  backButton: {
+    position: 'absolute',
+    top: responsivePadding(20),
+    left: responsivePadding(20),
+    zIndex: 1,
+  },
+  backButtonText: {
+    color: 'white',
+    fontSize: responsiveFontSize(16),
+    fontWeight: '600',
+  },
+  welcomeContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: responsivePadding(20),
+  },
+  welcomeMessageContainer: {
+    alignItems: 'center',
+    marginBottom: responsivePadding(40),
+    paddingHorizontal: responsivePadding(20),
+  },
+  welcomeCardsContainer: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    maxWidth: isTablet ? 800 : '100%',
+  },
+  welcomeContainer: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    paddingHorizontal: isTablet ? 40 : 20,
+    paddingVertical: responsivePadding(20),
+  },
+  imageGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: isLargeTablet ? 'center' : 'space-between',
+    maxWidth: isTablet ? 900 : '100%',
+    width: '100%',
+  },
   historyList: {
-    padding: 20,
+    padding: responsivePadding(20),
+    width: '100%',
+    maxWidth: isTablet ? 800 : '100%',
+    alignSelf: 'center',
   },
   visitorCard: {
     backgroundColor: 'white',
     borderRadius: 8,
-    padding: 16,
+    padding: responsivePadding(16),
     marginBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -677,22 +1240,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
+    minHeight: isTablet ? 80 : 60,
   },
   visitorInfo: {
     flex: 1,
   },
   visitorName: {
-    fontSize: 16,
+    fontSize: responsiveFontSize(16),
     fontWeight: '600',
     color: '#1f2937',
   },
   visitorCompany: {
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
     color: '#6b7280',
     marginTop: 2,
   },
   visitorTime: {
-    fontSize: 12,
+    fontSize: responsiveFontSize(12),
     color: '#9ca3af',
     marginTop: 4,
   },
@@ -712,67 +1276,162 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#374151',
   },
+  visitorActions: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    minWidth: isTablet ? 120 : 100,
+  },
+  checkoutButton: {
+    backgroundColor: '#dc2626',
+    paddingHorizontal: responsivePadding(12),
+    paddingVertical: responsivePadding(8),
+    borderRadius: 6,
+    marginTop: 8,
+    minHeight: isTablet ? 36 : 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: isTablet ? 80 : 70,
+  },
+  checkoutButtonText: {
+    color: 'white',
+    fontSize: responsiveFontSize(12),
+    fontWeight: '600',
+  },
   statsContainer: {
-    padding: 20,
+    padding: responsivePadding(20),
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    justifyContent: isLargeTablet ? 'center' : 'space-between',
+    maxWidth: isTablet ? 900 : '100%',
+    alignSelf: 'center',
+    width: '100%',
   },
   statCard: {
     backgroundColor: 'white',
     borderRadius: 8,
-    padding: 20,
-    width: '48%',
+    padding: responsivePadding(20),
+    width: isLargeTablet ? '22%' : isTablet ? '45%' : '48%',
     marginBottom: 16,
+    marginHorizontal: isLargeTablet ? '1.5%' : 0,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
+    minHeight: isTablet ? 120 : 100,
+    justifyContent: 'center',
   },
   statNumber: {
-    fontSize: 32,
+    fontSize: responsiveFontSize(32),
     fontWeight: 'bold',
     color: '#2563eb',
     marginBottom: 8,
   },
   statLabel: {
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
     color: '#6b7280',
     textAlign: 'center',
+    lineHeight: responsiveFontSize(18),
   },
   settingsContainer: {
-    padding: 20,
+    padding: responsivePadding(20),
+    maxWidth: isTablet ? 600 : '100%',
+    alignSelf: 'center',
+    width: '100%',
   },
   settingItem: {
     backgroundColor: 'white',
     borderRadius: 8,
-    padding: 16,
+    padding: responsivePadding(16),
     marginBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    minHeight: isTablet ? 70 : 60,
   },
   settingLabel: {
-    fontSize: 16,
+    fontSize: responsiveFontSize(16),
     color: '#374151',
     fontWeight: '500',
   },
   settingValue: {
-    fontSize: 16,
+    fontSize: responsiveFontSize(16),
     color: '#6b7280',
   },
   activeStatus: {
     color: '#16a34a',
     fontWeight: '600',
   },
+  settingSection: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: responsivePadding(20),
+    marginBottom: 20,
+    marginTop: 10,
+  },
+  sectionTitle: {
+    fontSize: responsiveFontSize(18),
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  sectionSubtitle: {
+    fontSize: responsiveFontSize(14),
+    marginBottom: 16,
+  },
+  themeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  themeCard: {
+    width: isTablet ? '48%' : '48%',
+    aspectRatio: 1.5,
+    borderRadius: 12,
+    marginBottom: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: 'transparent',
+    position: 'relative',
+  },
+  themeCardSelected: {
+    borderColor: '#ffffff',
+  },
+  themeEmoji: {
+    fontSize: responsiveFontSize(28),
+    marginBottom: 6,
+  },
+  themeName: {
+    color: 'white',
+    fontSize: responsiveFontSize(12),
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  selectedIndicator: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  selectedText: {
+    color: 'white',
+    fontSize: responsiveFontSize(14),
+    fontWeight: 'bold',
+  },
   resetButton: {
     backgroundColor: '#dc2626',
-    padding: 16,
+    padding: responsivePadding(16),
     borderRadius: 8,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: responsivePadding(20),
+    minHeight: isTablet ? 56 : 48,
+    justifyContent: 'center',
   },
   refreshButton: {
     backgroundColor: '#2563eb',
@@ -780,7 +1439,7 @@ const styles = StyleSheet.create({
   },
   resetButtonText: {
     color: 'white',
-    fontSize: 16,
+    fontSize: responsiveFontSize(16),
     fontWeight: '600',
   },
   buttonDisabled: {
@@ -944,5 +1603,65 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
+  },
+  
+  // Welcome Screen Settings Icon
+  settingsIcon: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? responsivePadding(50) : responsivePadding(30),
+    right: responsivePadding(20),
+    width: responsivePadding(50),
+    height: responsivePadding(50),
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: responsivePadding(25),
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  settingsGearContainer: {
+    width: responsivePadding(24),
+    height: responsivePadding(24),
+    position: 'relative',
+  },
+  settingsGear: {
+    width: responsivePadding(12),
+    height: responsivePadding(12),
+    borderRadius: responsivePadding(6),
+    position: 'absolute',
+    top: responsivePadding(6),
+    left: responsivePadding(6),
+  },
+  settingsTooth1: {
+    width: responsivePadding(3),
+    height: responsivePadding(6),
+    position: 'absolute',
+    top: 0,
+    left: responsivePadding(10.5),
+  },
+  settingsTooth2: {
+    width: responsivePadding(6),
+    height: responsivePadding(3),
+    position: 'absolute',
+    top: responsivePadding(10.5),
+    right: 0,
+  },
+  settingsTooth3: {
+    width: responsivePadding(3),
+    height: responsivePadding(6),
+    position: 'absolute',
+    bottom: 0,
+    left: responsivePadding(10.5),
+  },
+  settingsTooth4: {
+    width: responsivePadding(6),
+    height: responsivePadding(3),
+    position: 'absolute',
+    top: responsivePadding(10.5),
+    left: 0,
   },
 });

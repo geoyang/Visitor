@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "visitor-management-app",
+    "slug": "visitor-management-app",
+    "version": "1.0.0",
+    "description": "Cross-platform visitor management app for offices",
+    "sdkVersion": "49.0.0",
+    "platforms": [
+      "ios",
+      "android"
+    ]
+  }
+}
