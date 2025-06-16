@@ -18,7 +18,7 @@ import {
   DraggedNode,
   DesignerState,
 } from '../types/workflow';
-import { useTheme } from '../contexts/ThemeContext';
+import { useTheme } from '../contexts/EnhancedThemeContext';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 

@@ -11,7 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { FormField, FormFieldOption, ValidationRule } from '../../types/formBuilder';
-import { useTheme } from '../../contexts/ThemeContext';
+import { useTheme } from '../../contexts/EnhancedThemeContext';
 
 interface FieldConfigModalProps {
   visible: boolean;

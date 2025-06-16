@@ -16,11 +16,12 @@ import {
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSimpleDeviceConfig } from '../contexts/SimpleDeviceConfig';
-import { ThemeProvider, useTheme } from '../contexts/ThemeContext';
+import { useTheme, EnhancedThemeProvider } from '../contexts/EnhancedThemeContext';
 import { ThemeType } from '../themes/themes';
 import ThemeBackground from './ThemeBackground';
 import WorkflowManagementScreen from '../screens/WorkflowManagementScreen';
 import FormManagementScreen from '../screens/FormManagementScreen';
+import ThemeManagementScreen from '../screens/ThemeManagementScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -641,24 +642,13 @@ function AnalyticsScreen() {
 
 // Simple Settings Screen
 function SettingsScreen() {
-  const { config, clearConfig, refreshConfig, updateTheme } = useSimpleDeviceConfig();
+  const { config, clearConfig, refreshConfig } = useSimpleDeviceConfig();
   const { theme } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
-  const [changingTheme, setChangingTheme] = useState(false);
   const [showWorkflowManagement, setShowWorkflowManagement] = useState(false);
   const [showFormManagement, setShowFormManagement] = useState(false);
+  const [showThemeManagement, setShowThemeManagement] = useState(false);
 
-  const handleThemeChange = async (newTheme: 'hightech' | 'lawfirm' | 'metropolitan' | 'zen') => {
-    try {
-      setChangingTheme(true);
-      await updateTheme(newTheme);
-      Alert.alert('Success', 'Theme updated successfully');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update theme');
-    } finally {
-      setChangingTheme(false);
-    }
-  };
 
   const handleRefresh = async () => {
     try {
@@ -698,12 +688,10 @@ function SettingsScreen() {
     setShowFormManagement(true);
   };
 
-  const themeOptions = [
-    { id: 'hightech', name: 'High Tech', emoji: '🚀', color: '#1e40af' },
-    { id: 'lawfirm', name: 'Law Firm', emoji: '⚖️', color: '#7c2d12' },
-    { id: 'metropolitan', name: 'Metropolitan', emoji: '🏙️', color: '#db2777' },
-    { id: 'zen', name: 'Calm Zen', emoji: '🧘', color: '#059669' }
-  ];
+  const handleThemeManagement = () => {
+    setShowThemeManagement(true);
+  };
+
 
   // Show workflow management screen if requested
   if (showWorkflowManagement) {
@@ -719,6 +707,15 @@ function SettingsScreen() {
     return (
       <FormManagementScreen 
         onBack={() => setShowFormManagement(false)}
+      />
+    );
+  }
+
+  // Show theme management screen if requested
+  if (showThemeManagement) {
+    return (
+      <ThemeManagementScreen 
+        onBack={() => setShowThemeManagement(false)}
       />
     );
   }
@@ -756,35 +753,6 @@ function SettingsScreen() {
           <Text style={[styles.settingValue, { color: theme.colors.success }]}>Active</Text>
         </View>
 
-        {/* Theme Selection Section */}
-        <View style={[styles.settingSection, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Visual Theme</Text>
-          <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>Choose your preferred appearance</Text>
-          
-          <View style={styles.themeGrid}>
-            {themeOptions.map((themeOption) => (
-              <TouchableOpacity
-                key={themeOption.id}
-                style={[
-                  styles.themeCard,
-                  { backgroundColor: themeOption.color },
-                  config?.theme === themeOption.id && styles.themeCardSelected,
-                  theme.shadow.small
-                ]}
-                onPress={() => handleThemeChange(themeOption.id as any)}
-                disabled={changingTheme}
-              >
-                <Text style={styles.themeEmoji}>{themeOption.emoji}</Text>
-                <Text style={styles.themeName}>{themeOption.name}</Text>
-                {config?.theme === themeOption.id && (
-                  <View style={styles.selectedIndicator}>
-                    <Text style={styles.selectedText}>✓</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
 
         {/* Workflow Management Section */}
         <View style={[styles.settingSection, { backgroundColor: theme.colors.surface }]}>
@@ -820,6 +788,26 @@ function SettingsScreen() {
               <View style={styles.workflowButtonText}>
                 <Text style={styles.workflowButtonTitle}>Manage Forms</Text>
                 <Text style={styles.workflowButtonSubtitle}>Design custom registration forms</Text>
+              </View>
+              <Text style={styles.workflowArrow}>→</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Theme Management Section */}
+        <View style={[styles.settingSection, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Theme Management</Text>
+          <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>Customize colors, fonts, and branding</Text>
+          
+          <TouchableOpacity
+            style={[styles.workflowButton, { backgroundColor: '#8b5cf6' }]}
+            onPress={handleThemeManagement}
+          >
+            <View style={styles.workflowButtonContent}>
+              <Text style={styles.workflowIcon}>🎨</Text>
+              <View style={styles.workflowButtonText}>
+                <Text style={styles.workflowButtonTitle}>Customize Themes</Text>
+                <Text style={styles.workflowButtonSubtitle}>Design your visitor experience</Text>
               </View>
               <Text style={styles.workflowArrow}>→</Text>
             </View>
@@ -997,7 +985,7 @@ export default function SimpleVisitorApp() {
   const selectedTheme: ThemeType = config?.theme || 'hightech';
 
   return (
-    <ThemeProvider themeType={selectedTheme}>
+    <EnhancedThemeProvider themeType={selectedTheme}>
       <ThemedApp 
         showWelcome={showWelcome}
         showSettingsFromWelcome={showSettingsFromWelcome}
@@ -1005,7 +993,7 @@ export default function SimpleVisitorApp() {
         onBackToWelcome={handleBackToWelcome}
         onOpenSettings={handleOpenSettings}
       />
-    </ThemeProvider>
+    </EnhancedThemeProvider>
   );
 }
 

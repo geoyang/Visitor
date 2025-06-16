@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
-import { useTheme } from '../contexts/ThemeContext';
+import { useTheme } from '../contexts/EnhancedThemeContext';
 import { useSimpleDeviceConfig } from '../contexts/SimpleDeviceConfig';
 import WorkflowDesigner from '../components/WorkflowDesigner';
 import NodeConfigModal from '../components/workflow/NodeConfigModal';

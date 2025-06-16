@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
-import { useTheme } from '../contexts/ThemeContext';
+import { useTheme } from '../contexts/EnhancedThemeContext';
 import { useSimpleDeviceConfig } from '../contexts/SimpleDeviceConfig';
 import FormBuilder from '../components/formBuilder/FormBuilder';
 import FieldConfigModal from '../components/formBuilder/FieldConfigModal';
@@ -43,7 +43,10 @@ const FormManagementScreen: React.FC<FormManagementScreenProps> = ({ onBack }) =
   }, []);
 
   const fetchForms = async () => {
-    if (!config) return;
+    if (!config) {
+      console.error('No config available for fetchForms');
+      return;
+    }
 
     try {
       setIsLoading(true);
@@ -55,12 +58,21 @@ const FormManagementScreen: React.FC<FormManagementScreenProps> = ({ onBack }) =
         headers['X-Device-Token'] = config.deviceToken;
       }
 
+      console.log('=== FETCHING FORMS ===');
+      console.log('URL:', `${config.serverUrl}/forms`);
+      console.log('Headers:', headers);
+
       const response = await fetch(`${config.serverUrl}/forms`, { headers });
+      console.log('Response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('Forms received:', data.length);
+        console.log('Forms data:', JSON.stringify(data, null, 2));
         setForms(data);
       } else {
-        console.error('Failed to fetch forms');
+        const errorText = await response.text();
+        console.error('Failed to fetch forms:', response.status, errorText);
       }
     } catch (error) {
       console.error('Error fetching forms:', error);
@@ -185,6 +197,10 @@ const FormManagementScreen: React.FC<FormManagementScreenProps> = ({ onBack }) =
       };
 
       console.log('=== FORM SAVE DEBUG ===');
+      console.log('Device config:', config);
+      console.log('Company ID from config:', config?.companyId);
+      console.log('Device ID from config:', config?.deviceId);
+      console.log('Device Token:', config?.deviceToken ? 'Present' : 'Missing');
       console.log('Original form:', form);
       console.log('Cleaned form data:', JSON.stringify(formData, null, 2));
       console.log('URL:', url);
@@ -199,7 +215,15 @@ const FormManagementScreen: React.FC<FormManagementScreenProps> = ({ onBack }) =
       });
 
       if (response.ok) {
+        const savedForm = await response.json();
+        console.log('=== FORM SAVED SUCCESSFULLY ===');
+        console.log('Saved form response:', JSON.stringify(savedForm, null, 2));
+        
         Alert.alert('Success', 'Form saved successfully');
+        
+        // Close the builder and fetch fresh forms
+        setShowBuilder(false);
+        setSelectedForm(null);
         await fetchForms();
       } else {
         const errorText = await response.text();

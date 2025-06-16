@@ -107,6 +107,8 @@ forms_collection = db.forms
 form_submissions_collection = db.form_submissions
 workflows_collection = db.workflows
 companies_collection = db.companies
+themes_collection = db.themes
+theme_activations_collection = db.theme_activations
 locations_collection = db.locations
 devices_collection = db.devices
 users_collection = db.users
@@ -422,6 +424,187 @@ class CreatePaymentIntentRequest(BaseModel):
 class StripeWebhookEvent(BaseModel):
     type: str
     data: Dict[str, Any]
+
+# Theme models
+class ThemeColors(BaseModel):
+    primary: str
+    secondary: str
+    background: str
+    surface: str
+    text: str
+    textSecondary: str
+    error: str
+    warning: str
+    success: str
+    info: str
+    border: str
+    headerBackground: str
+    headerText: str
+    buttonBackground: str
+    buttonText: str
+    linkColor: str
+
+class ThemeFontSizes(BaseModel):
+    xs: int = 10
+    sm: int = 12
+    md: int = 14
+    lg: int = 16
+    xl: int = 20
+    xxl: int = 24
+
+class ThemeFontWeights(BaseModel):
+    light: str = "300"
+    regular: str = "400"
+    medium: str = "500"
+    semibold: str = "600"
+    bold: str = "700"
+
+class ThemeFonts(BaseModel):
+    primary: str = "System"
+    heading: str = "System"
+    body: str = "System"
+    button: str = "System"
+    sizes: ThemeFontSizes = Field(default_factory=ThemeFontSizes)
+    weights: ThemeFontWeights = Field(default_factory=ThemeFontWeights)
+
+class ThemeImages(BaseModel):
+    logo: str = ""
+    background: str = ""
+    welcomeImage: str = ""
+
+class ThemeSpacing(BaseModel):
+    xs: int = 4
+    sm: int = 8
+    md: int = 16
+    lg: int = 24
+    xl: int = 32
+    xxl: int = 48
+
+class ThemeBorderRadius(BaseModel):
+    none: int = 0
+    sm: int = 4
+    md: int = 8
+    lg: int = 12
+    xl: int = 16
+    full: int = 9999
+
+class ThemeShadows(BaseModel):
+    none: str = "none"
+    sm: str = "0 1px 2px 0 rgba(0, 0, 0, 0.05)"
+    md: str = "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
+    lg: str = "0 10px 15px -3px rgba(0, 0, 0, 0.1)"
+    xl: str = "0 20px 25px -5px rgba(0, 0, 0, 0.1)"
+
+class ThemeAnimationDuration(BaseModel):
+    fast: int = 150
+    normal: int = 300
+    slow: int = 500
+
+class ThemeAnimationEasing(BaseModel):
+    linear: str = "linear"
+    easeIn: str = "ease-in"
+    easeOut: str = "ease-out"
+    easeInOut: str = "ease-in-out"
+
+class ThemeAnimations(BaseModel):
+    duration: ThemeAnimationDuration = Field(default_factory=ThemeAnimationDuration)
+    easing: ThemeAnimationEasing = Field(default_factory=ThemeAnimationEasing)
+
+class ThemeFormConfig(BaseModel):
+    defaultFormIds: List[str] = Field(default_factory=list)
+    formOrder: List[str] = Field(default_factory=list)
+    hiddenFormIds: List[str] = Field(default_factory=list)
+    formStyles: Dict[str, Any] = Field(default_factory=dict)
+
+class ThemeLayoutConfig(BaseModel):
+    showLogo: bool = True
+    logoPosition: str = "center"  # left, center, right
+    showCompanyName: bool = True
+    showWelcomeMessage: bool = True
+    welcomeMessage: str = "Welcome!"
+    showDateTime: bool = True
+    showLocationInfo: bool = True
+
+class ThemeCategory(str, Enum):
+    DEFAULT = "default"
+    SEASONAL = "seasonal"
+    BRAND = "brand"
+    EVENT = "event"
+    CUSTOM = "custom"
+
+class ThemeStatus(str, Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    DRAFT = "draft"
+
+class ThemeCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    category: ThemeCategory = ThemeCategory.CUSTOM
+    status: ThemeStatus = ThemeStatus.DRAFT
+    colors: ThemeColors
+    fonts: ThemeFonts = Field(default_factory=ThemeFonts)
+    images: ThemeImages = Field(default_factory=ThemeImages)
+    spacing: ThemeSpacing = Field(default_factory=ThemeSpacing)
+    borderRadius: ThemeBorderRadius = Field(default_factory=ThemeBorderRadius)
+    shadows: ThemeShadows = Field(default_factory=ThemeShadows)
+    animations: ThemeAnimations = Field(default_factory=ThemeAnimations)
+    formConfig: ThemeFormConfig = Field(default_factory=ThemeFormConfig)
+    layoutConfig: ThemeLayoutConfig = Field(default_factory=ThemeLayoutConfig)
+    companyId: str
+    createdBy: Optional[str] = None
+
+class ThemeUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[ThemeCategory] = None
+    status: Optional[ThemeStatus] = None
+    colors: Optional[ThemeColors] = None
+    fonts: Optional[ThemeFonts] = None
+    images: Optional[ThemeImages] = None
+    spacing: Optional[ThemeSpacing] = None
+    borderRadius: Optional[ThemeBorderRadius] = None
+    shadows: Optional[ThemeShadows] = None
+    animations: Optional[ThemeAnimations] = None
+    formConfig: Optional[ThemeFormConfig] = None
+    layoutConfig: Optional[ThemeLayoutConfig] = None
+
+class ThemeResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    category: ThemeCategory
+    status: ThemeStatus
+    colors: ThemeColors
+    fonts: ThemeFonts
+    images: ThemeImages
+    spacing: ThemeSpacing
+    borderRadius: ThemeBorderRadius
+    shadows: ThemeShadows
+    animations: ThemeAnimations
+    formConfig: ThemeFormConfig
+    layoutConfig: ThemeLayoutConfig
+    companyId: str
+    createdBy: Optional[str] = None
+    createdAt: datetime
+    updatedAt: datetime
+    version: int = 1
+
+class ThemeActivation(BaseModel):
+    companyId: str
+    themeId: Optional[str] = None
+    themeType: str = "custom"  # builtin, custom
+    builtinThemeName: Optional[str] = None
+    activatedBy: Optional[str] = None
+
+class ThemeActivationResponse(BaseModel):
+    id: str
+    companyId: str
+    themeId: Optional[str] = None
+    themeType: str
+    builtinThemeName: Optional[str] = None
+    activatedBy: Optional[str] = None
+    activatedAt: datetime
 
 # Helper functions
 def visitor_helper(visitor) -> dict:
@@ -1432,42 +1615,45 @@ async def checkout_visitor(
 #     except Exception as e:
 #         raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/forms", response_model=List[CustomFormResponse])
-async def get_forms():
-    """Get all forms"""
-    forms = await forms_collection.find({"is_active": True}).to_list(length=None)
-    return [form_helper(form) for form in forms]
+# Commented out - using the more comprehensive form endpoint below that handles device auth
+# @app.get("/forms", response_model=List[CustomFormResponse])
+# async def get_forms():
+#     """Get all forms"""
+#     forms = await forms_collection.find({"is_active": True}).to_list(length=None)
+#     return [form_helper(form) for form in forms]
 
-@app.get("/forms/{form_id}", response_model=CustomFormResponse)
-async def get_form(form_id: str):
-    """Get a specific form by ID"""
-    try:
-        form = await forms_collection.find_one({"_id": ObjectId(form_id)})
-        if not form:
-            raise HTTPException(status_code=404, detail="Form not found")
-        return form_helper(form)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+# Commented out - using the more comprehensive form endpoint below that handles device auth
+# @app.get("/forms/{form_id}", response_model=CustomFormResponse)
+# async def get_form(form_id: str):
+#     """Get a specific form by ID"""
+#     try:
+#         form = await forms_collection.find_one({"_id": ObjectId(form_id)})
+#         if not form:
+#             raise HTTPException(status_code=404, detail="Form not found")
+#         return form_helper(form)
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=str(e))
 
-@app.put("/forms/{form_id}", response_model=CustomFormResponse)
-async def update_form(form_id: str, form_update: CustomForm):
-    """Update a form"""
-    try:
-        update_dict = form_update.dict()
-        update_dict["updated_at"] = datetime.now(timezone.utc)
-        
-        result = await forms_collection.update_one(
-            {"_id": ObjectId(form_id)},
-            {"$set": update_dict}
-        )
-        
-        if result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Form not found")
-        
-        updated_form = await forms_collection.find_one({"_id": ObjectId(form_id)})
-        return form_helper(updated_form)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+# Commented out - using the more comprehensive form endpoint below that handles device auth
+# @app.put("/forms/{form_id}", response_model=CustomFormResponse)
+# async def update_form(form_id: str, form_update: CustomForm):
+#     """Update a form"""
+#     try:
+#         update_dict = form_update.dict()
+#         update_dict["updated_at"] = datetime.now(timezone.utc)
+#         
+#         result = await forms_collection.update_one(
+#             {"_id": ObjectId(form_id)},
+#             {"$set": update_dict}
+#         )
+#         
+#         if result.matched_count == 0:
+#             raise HTTPException(status_code=404, detail="Form not found")
+#         
+#         updated_form = await forms_collection.find_one({"_id": ObjectId(form_id)})
+#         return form_helper(updated_form)
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/forms/{form_id}")
 async def delete_form(form_id: str):
@@ -2769,6 +2955,609 @@ async def delete_device(device_id: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+# Theme management endpoints
+@app.get("/api/themes", response_model=List[ThemeResponse])
+async def get_company_themes(
+    companyId: str = None,
+    current_company: dict = Depends(get_current_company)
+):
+    """Get all themes for a company"""
+    try:
+        # Use provided companyId or current company's ID
+        company_id = companyId or current_company["id"]
+        
+        # Verify access - users can only access their own company's themes
+        if current_company.get("role") != "super_admin" and company_id != current_company["id"]:
+            raise HTTPException(status_code=403, detail="Access denied to company themes")
+        
+        themes_cursor = themes_collection.find({"companyId": company_id})
+        themes = await themes_cursor.to_list(length=None)
+        
+        if not themes:
+            return []
+        
+        return [
+            ThemeResponse(
+                id=str(theme["_id"]),
+                name=theme["name"],
+                description=theme.get("description"),
+                category=theme["category"],
+                status=theme["status"],
+                colors=ThemeColors(**theme["colors"]),
+                fonts=ThemeFonts(**theme.get("fonts", {})),
+                images=ThemeImages(**theme.get("images", {})),
+                spacing=ThemeSpacing(**theme.get("spacing", {})),
+                borderRadius=ThemeBorderRadius(**theme.get("borderRadius", {})),
+                shadows=ThemeShadows(**theme.get("shadows", {})),
+                animations=ThemeAnimations(**theme.get("animations", {})),
+                formConfig=ThemeFormConfig(**theme.get("formConfig", {})),
+                layoutConfig=ThemeLayoutConfig(**theme.get("layoutConfig", {})),
+                companyId=theme["companyId"],
+                createdBy=theme.get("createdBy"),
+                createdAt=theme["createdAt"],
+                updatedAt=theme["updatedAt"],
+                version=theme.get("version", 1)
+            )
+            for theme in themes
+        ]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching themes: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch themes")
+
+@app.post("/api/themes", response_model=dict)
+async def create_theme(
+    theme_data: ThemeCreate,
+    current_company: dict = Depends(get_current_company)
+):
+    """Create a new theme"""
+    try:
+        # Verify company access
+        if current_company.get("role") != "super_admin" and theme_data.companyId != current_company["id"]:
+            raise HTTPException(status_code=403, detail="Access denied to create theme for this company")
+        
+        # Generate unique theme ID
+        theme_id = f"theme_{int(time.time())}_{random.randint(1000, 9999)}"
+        
+        # Create theme document
+        theme_doc = {
+            "id": theme_id,
+            "name": theme_data.name,
+            "description": theme_data.description,
+            "category": theme_data.category.value,
+            "status": theme_data.status.value,
+            "colors": theme_data.colors.dict(),
+            "fonts": theme_data.fonts.dict(),
+            "images": theme_data.images.dict(),
+            "spacing": theme_data.spacing.dict(),
+            "borderRadius": theme_data.borderRadius.dict(),
+            "shadows": theme_data.shadows.dict(),
+            "animations": theme_data.animations.dict(),
+            "formConfig": theme_data.formConfig.dict(),
+            "layoutConfig": theme_data.layoutConfig.dict(),
+            "companyId": theme_data.companyId,
+            "createdBy": theme_data.createdBy,
+            "createdAt": datetime.now(timezone.utc),
+            "updatedAt": datetime.now(timezone.utc),
+            "version": 1
+        }
+        
+        result = await themes_collection.insert_one(theme_doc)
+        
+        return {
+            "id": theme_id,
+            "message": "Theme created successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating theme: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create theme")
+
+@app.get("/api/themes/{theme_id}", response_model=ThemeResponse)
+async def get_theme(
+    theme_id: str,
+    current_company: dict = Depends(get_current_company)
+):
+    """Get a specific theme by ID"""
+    try:
+        theme = await themes_collection.find_one({"id": theme_id})
+        if not theme:
+            raise HTTPException(status_code=404, detail="Theme not found")
+        
+        # Verify access
+        if current_company.get("role") != "super_admin" and theme["companyId"] != current_company["id"]:
+            raise HTTPException(status_code=403, detail="Access denied to this theme")
+        
+        return ThemeResponse(
+            id=str(theme["_id"]),
+            name=theme["name"],
+            description=theme.get("description"),
+            category=theme["category"],
+            status=theme["status"],
+            colors=ThemeColors(**theme["colors"]),
+            fonts=ThemeFonts(**theme.get("fonts", {})),
+            images=ThemeImages(**theme.get("images", {})),
+            spacing=ThemeSpacing(**theme.get("spacing", {})),
+            borderRadius=ThemeBorderRadius(**theme.get("borderRadius", {})),
+            shadows=ThemeShadows(**theme.get("shadows", {})),
+            animations=ThemeAnimations(**theme.get("animations", {})),
+            formConfig=ThemeFormConfig(**theme.get("formConfig", {})),
+            layoutConfig=ThemeLayoutConfig(**theme.get("layoutConfig", {})),
+            companyId=theme["companyId"],
+            createdBy=theme.get("createdBy"),
+            createdAt=theme["createdAt"],
+            updatedAt=theme["updatedAt"],
+            version=theme.get("version", 1)
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching theme: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch theme")
+
+@app.put("/api/themes/{theme_id}", response_model=dict)
+async def update_theme(
+    theme_id: str,
+    theme_update: ThemeUpdate,
+    current_company: dict = Depends(get_current_company)
+):
+    """Update a theme"""
+    try:
+        # Check if theme exists and verify access
+        existing_theme = await themes_collection.find_one({"id": theme_id})
+        if not existing_theme:
+            raise HTTPException(status_code=404, detail="Theme not found")
+        
+        # Verify access
+        if current_company.get("role") != "super_admin" and existing_theme["companyId"] != current_company["id"]:
+            raise HTTPException(status_code=403, detail="Access denied to this theme")
+        
+        # Build update document
+        update_doc = {"updatedAt": datetime.now(timezone.utc)}
+        
+        for field, value in theme_update.dict(exclude_unset=True).items():
+            if value is not None:
+                if hasattr(value, 'dict'):  # Pydantic model
+                    update_doc[field] = value.dict()
+                else:
+                    update_doc[field] = value.value if hasattr(value, 'value') else value
+        
+        result = await themes_collection.update_one(
+            {"id": theme_id},
+            {"$set": update_doc}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Theme not found")
+        
+        return {"message": "Theme updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating theme: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update theme")
+
+@app.delete("/api/themes/{theme_id}", response_model=dict)
+async def delete_theme(
+    theme_id: str,
+    current_company: dict = Depends(get_current_company)
+):
+    """Delete a theme"""
+    try:
+        # Check if theme exists and verify access
+        existing_theme = await themes_collection.find_one({"id": theme_id})
+        if not existing_theme:
+            raise HTTPException(status_code=404, detail="Theme not found")
+        
+        # Verify access
+        if current_company.get("role") != "super_admin" and existing_theme["companyId"] != current_company["id"]:
+            raise HTTPException(status_code=403, detail="Access denied to this theme")
+        
+        # Check if theme is currently active
+        active_theme = await theme_activations_collection.find_one({
+            "companyId": existing_theme["companyId"],
+            "themeId": theme_id
+        })
+        
+        if active_theme:
+            raise HTTPException(status_code=400, detail="Cannot delete active theme. Please activate a different theme first.")
+        
+        result = await themes_collection.delete_one({"id": theme_id})
+        
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Theme not found")
+        
+        return {"message": "Theme deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting theme: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete theme")
+
+@app.get("/api/themes/active", response_model=dict)
+async def get_active_theme(
+    companyId: str = None,
+    current_company: dict = Depends(get_current_company)
+):
+    """Get the currently active theme for a company"""
+    try:
+        # Use provided companyId or current company's ID
+        company_id = companyId or current_company["id"]
+        
+        # Verify access
+        if current_company.get("role") != "super_admin" and company_id != current_company["id"]:
+            raise HTTPException(status_code=403, detail="Access denied to company themes")
+        
+        # Find active theme
+        activation = await theme_activations_collection.find_one({"companyId": company_id})
+        
+        if not activation:
+            return {"theme": None, "isActive": False}
+        
+        if activation.get("themeType") == "builtin":
+            return {
+                "theme": {
+                    "name": activation.get("builtinThemeName"),
+                    "type": "builtin"
+                },
+                "isActive": True
+            }
+        
+        # Get custom theme
+        if activation.get("themeId"):
+            theme = await themes_collection.find_one({"id": activation["themeId"]})
+            if theme:
+                theme_response = ThemeResponse(
+                    id=str(theme["_id"]),
+                    name=theme["name"],
+                    description=theme.get("description"),
+                    category=theme["category"],
+                    status=theme["status"],
+                    colors=ThemeColors(**theme["colors"]),
+                    fonts=ThemeFonts(**theme.get("fonts", {})),
+                    images=ThemeImages(**theme.get("images", {})),
+                    spacing=ThemeSpacing(**theme.get("spacing", {})),
+                    borderRadius=ThemeBorderRadius(**theme.get("borderRadius", {})),
+                    shadows=ThemeShadows(**theme.get("shadows", {})),
+                    animations=ThemeAnimations(**theme.get("animations", {})),
+                    formConfig=ThemeFormConfig(**theme.get("formConfig", {})),
+                    layoutConfig=ThemeLayoutConfig(**theme.get("layoutConfig", {})),
+                    companyId=theme["companyId"],
+                    createdBy=theme.get("createdBy"),
+                    createdAt=theme["createdAt"],
+                    updatedAt=theme["updatedAt"],
+                    version=theme.get("version", 1)
+                )
+                return {"theme": theme_response.dict(), "isActive": True}
+        
+        return {"theme": None, "isActive": False}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching active theme: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch active theme")
+
+@app.post("/api/themes/{theme_id}/activate", response_model=dict)
+async def activate_theme(
+    theme_id: str,
+    current_company: dict = Depends(get_current_company)
+):
+    """Activate a theme for a company"""
+    try:
+        # Check if theme exists
+        theme = await themes_collection.find_one({"id": theme_id})
+        if not theme:
+            raise HTTPException(status_code=404, detail="Theme not found")
+        
+        # Verify access
+        if current_company.get("role") != "super_admin" and theme["companyId"] != current_company["id"]:
+            raise HTTPException(status_code=403, detail="Access denied to this theme")
+        
+        # Create or update activation record
+        activation_doc = {
+            "companyId": theme["companyId"],
+            "themeId": theme_id,
+            "themeType": "custom",
+            "builtinThemeName": None,
+            "activatedAt": datetime.now(timezone.utc),
+            "activatedBy": current_company.get("id")
+        }
+        
+        await theme_activations_collection.replace_one(
+            {"companyId": theme["companyId"]},
+            activation_doc,
+            upsert=True
+        )
+        
+        return {"message": "Theme activated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error activating theme: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to activate theme")
+
+# Device-based theme endpoints (for React Native app)
+@app.get("/device/themes", response_model=List[ThemeResponse])
+async def get_device_themes(current_device: dict = Depends(get_current_device)):
+    """Get all themes for the device's company (device token auth)"""
+    try:
+        company_id = current_device.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Device not associated with a company")
+        
+        themes_cursor = themes_collection.find({"companyId": company_id})
+        themes = await themes_cursor.to_list(length=None)
+        
+        return [
+            ThemeResponse(
+                id=str(theme["_id"]),
+                name=theme["name"],
+                description=theme.get("description"),
+                category=theme["category"],
+                status=theme["status"],
+                colors=ThemeColors(**theme["colors"]),
+                fonts=ThemeFonts(**theme.get("fonts", {})),
+                images=ThemeImages(**theme.get("images", {})),
+                spacing=ThemeSpacing(**theme.get("spacing", {})),
+                borderRadius=ThemeBorderRadius(**theme.get("borderRadius", {})),
+                shadows=ThemeShadows(**theme.get("shadows", {})),
+                animations=ThemeAnimations(**theme.get("animations", {})),
+                formConfig=ThemeFormConfig(**theme.get("formConfig", {})),
+                layoutConfig=ThemeLayoutConfig(**theme.get("layoutConfig", {})),
+                companyId=theme["companyId"],
+                createdBy=theme.get("createdBy"),
+                createdAt=theme["createdAt"],
+                updatedAt=theme["updatedAt"],
+                version=theme.get("version", 1)
+            )
+            for theme in themes
+        ]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching device themes: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch themes")
+
+@app.post("/device/themes", response_model=dict)
+async def create_device_theme(
+    theme_data: ThemeCreate,
+    current_device: dict = Depends(get_current_device)
+):
+    """Create a new theme for the device's company (device token auth)"""
+    try:
+        company_id = current_device.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Device not associated with a company")
+        
+        # Override companyId to ensure it matches the device's company
+        theme_data.companyId = company_id
+        
+        # Generate unique theme ID
+        theme_id = f"theme_{int(time.time())}_{random.randint(1000, 9999)}"
+        
+        # Create theme document
+        theme_doc = {
+            "id": theme_id,
+            "name": theme_data.name,
+            "description": theme_data.description,
+            "category": theme_data.category.value,
+            "status": theme_data.status.value,
+            "colors": theme_data.colors.dict(),
+            "fonts": theme_data.fonts.dict(),
+            "images": theme_data.images.dict(),
+            "spacing": theme_data.spacing.dict(),
+            "borderRadius": theme_data.borderRadius.dict(),
+            "shadows": theme_data.shadows.dict(),
+            "animations": theme_data.animations.dict(),
+            "formConfig": theme_data.formConfig.dict(),
+            "layoutConfig": theme_data.layoutConfig.dict(),
+            "companyId": company_id,
+            "createdBy": f"device_{current_device.get('id', 'unknown')}",
+            "createdAt": datetime.now(timezone.utc),
+            "updatedAt": datetime.now(timezone.utc),
+            "version": 1
+        }
+        
+        result = await themes_collection.insert_one(theme_doc)
+        
+        return {
+            "id": theme_id,
+            "message": "Theme created successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating device theme: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create theme")
+
+@app.post("/device/themes/{theme_id}/activate", response_model=dict)
+async def activate_device_theme(
+    theme_id: str,
+    current_device: dict = Depends(get_current_device)
+):
+    """Activate a theme for the device's company (device token auth)"""
+    try:
+        company_id = current_device.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Device not associated with a company")
+        
+        # Check if theme exists and belongs to the same company
+        # Try by custom id first, then by MongoDB _id
+        theme = await themes_collection.find_one({"id": theme_id, "companyId": company_id})
+        if not theme:
+            try:
+                from bson import ObjectId
+                theme = await themes_collection.find_one({"_id": ObjectId(theme_id), "companyId": company_id})
+            except:
+                pass
+        
+        if not theme:
+            raise HTTPException(status_code=404, detail="Theme not found or access denied")
+        
+        # Create or update activation record
+        # Use the theme's custom id if available, otherwise use MongoDB _id
+        actual_theme_id = theme.get("id") or str(theme["_id"])
+        
+        activation_doc = {
+            "companyId": company_id,
+            "themeId": actual_theme_id,
+            "themeType": "custom",
+            "builtinThemeName": None,
+            "activatedAt": datetime.now(timezone.utc),
+            "activatedBy": f"device_{current_device.get('id', 'unknown')}"
+        }
+        
+        await theme_activations_collection.replace_one(
+            {"companyId": company_id},
+            activation_doc,
+            upsert=True
+        )
+        
+        return {"message": "Theme activated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error activating device theme: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to activate theme")
+
+@app.put("/device/themes/{theme_id}", response_model=dict)
+async def update_device_theme(
+    theme_id: str,
+    theme_update: ThemeUpdate,
+    current_device: dict = Depends(get_current_device)
+):
+    """Update a theme for the device's company (device token auth)"""
+    try:
+        company_id = current_device.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Device not associated with a company")
+        
+        # Check if theme exists and belongs to the same company
+        existing_theme = await themes_collection.find_one({"id": theme_id, "companyId": company_id})
+        if not existing_theme:
+            raise HTTPException(status_code=404, detail="Theme not found or access denied")
+        
+        # Build update document
+        update_doc = {"updatedAt": datetime.now(timezone.utc)}
+        
+        for field, value in theme_update.dict(exclude_unset=True).items():
+            if value is not None:
+                if hasattr(value, 'dict'):  # Pydantic model
+                    update_doc[field] = value.dict()
+                else:
+                    update_doc[field] = value.value if hasattr(value, 'value') else value
+        
+        result = await themes_collection.update_one(
+            {"id": theme_id, "companyId": company_id},
+            {"$set": update_doc}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Theme not found")
+        
+        return {"message": "Theme updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating device theme: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update theme")
+
+@app.delete("/device/themes/{theme_id}", response_model=dict)
+async def delete_device_theme(
+    theme_id: str,
+    current_device: dict = Depends(get_current_device)
+):
+    """Delete a theme for the device's company (device token auth)"""
+    try:
+        company_id = current_device.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Device not associated with a company")
+        
+        # Check if theme exists and belongs to the same company
+        existing_theme = await themes_collection.find_one({"id": theme_id, "companyId": company_id})
+        if not existing_theme:
+            raise HTTPException(status_code=404, detail="Theme not found or access denied")
+        
+        # Check if theme is currently active
+        active_theme = await theme_activations_collection.find_one({
+            "companyId": company_id,
+            "themeId": theme_id
+        })
+        
+        if active_theme:
+            raise HTTPException(status_code=400, detail="Cannot delete active theme. Please activate a different theme first.")
+        
+        result = await themes_collection.delete_one({"id": theme_id, "companyId": company_id})
+        
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Theme not found")
+        
+        return {"message": "Theme deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting device theme: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete theme")
+
+@app.get("/device/themes/active", response_model=dict)
+async def get_active_device_theme(current_device: dict = Depends(get_current_device)):
+    """Get the currently active theme for the device's company (device token auth)"""
+    try:
+        company_id = current_device.get("company_id")
+        if not company_id:
+            raise HTTPException(status_code=400, detail="Device not associated with a company")
+        
+        # Find active theme
+        activation = await theme_activations_collection.find_one({"companyId": company_id})
+        
+        if not activation:
+            return {"theme": None, "isActive": False}
+        
+        if activation.get("themeType") == "builtin":
+            return {
+                "theme": {
+                    "name": activation.get("builtinThemeName"),
+                    "type": "builtin"
+                },
+                "isActive": True
+            }
+        
+        # Get custom theme
+        if activation.get("themeId"):
+            theme = await themes_collection.find_one({"id": activation["themeId"], "companyId": company_id})
+            if theme:
+                theme_response = ThemeResponse(
+                    id=str(theme["_id"]),
+                    name=theme["name"],
+                    description=theme.get("description"),
+                    category=theme["category"],
+                    status=theme["status"],
+                    colors=ThemeColors(**theme["colors"]),
+                    fonts=ThemeFonts(**theme.get("fonts", {})),
+                    images=ThemeImages(**theme.get("images", {})),
+                    spacing=ThemeSpacing(**theme.get("spacing", {})),
+                    borderRadius=ThemeBorderRadius(**theme.get("borderRadius", {})),
+                    shadows=ThemeShadows(**theme.get("shadows", {})),
+                    animations=ThemeAnimations(**theme.get("animations", {})),
+                    formConfig=ThemeFormConfig(**theme.get("formConfig", {})),
+                    layoutConfig=ThemeLayoutConfig(**theme.get("layoutConfig", {})),
+                    companyId=theme["companyId"],
+                    createdBy=theme.get("createdBy"),
+                    createdAt=theme["createdAt"],
+                    updatedAt=theme["updatedAt"],
+                    version=theme.get("version", 1)
+                )
+                return {"theme": theme_response.dict(), "isActive": True}
+        
+        return {"theme": None, "isActive": False}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching active device theme: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch active theme")
+
 # Analytics endpoints
 @app.get("/analytics/summary")
 async def get_analytics_summary(current_company: dict = Depends(get_current_company)):
@@ -3551,16 +4340,35 @@ async def get_forms(
         forms = await forms_collection.find({"company_id": current_device["company_id"]}).to_list(length=None)
         
         # Convert ObjectId to string and format dates
+        serialized_forms = []
         for form in forms:
-            form["id"] = str(form.pop("_id"))
-            if "created_at" in form:
-                form["createdAt"] = form["created_at"].isoformat()
-            if "updated_at" in form:
-                form["updatedAt"] = form["updated_at"].isoformat()
-            if "last_submission_at" in form and form["last_submission_at"]:
-                form["lastSubmissionAt"] = form["last_submission_at"].isoformat()
+            serialized_form = {
+                "id": str(form["_id"]),
+                "name": form.get("name", ""),
+                "description": form.get("description", ""),
+                "category": form.get("category", "visitor"),
+                "status": form.get("status", "draft"),
+                "fields": form.get("fields", []),
+                "layout": form.get("layout", {}),
+                "theme": form.get("theme", {}),
+                "settings": form.get("settings", {}),
+                "version": form.get("version", 1),
+                "location_ids": form.get("location_ids", []),
+                "company_id": str(form.get("company_id", "")),
+                "created_by": str(form.get("created_by", "")),
+                "created_at": form.get("created_at", datetime.now(timezone.utc)).isoformat(),
+                "updated_at": form.get("updated_at", datetime.now(timezone.utc)).isoformat(),
+            }
+            
+            # Add optional fields if they exist
+            if "totalSubmissions" in form:
+                serialized_form["totalSubmissions"] = form["totalSubmissions"]
+            if "lastSubmissionAt" in form:
+                serialized_form["lastSubmissionAt"] = form["lastSubmissionAt"].isoformat()
+                
+            serialized_forms.append(serialized_form)
         
-        return forms
+        return serialized_forms
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch forms: {str(e)}")
 

@@ -11,7 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { WorkflowNode, FormField, Condition, NodeConfig } from '../../types/workflow';
-import { useTheme } from '../../contexts/ThemeContext';
+import { useTheme } from '../../contexts/EnhancedThemeContext';
 
 interface NodeConfigModalProps {
   visible: boolean;
