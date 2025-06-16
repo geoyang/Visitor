@@ -15,7 +15,9 @@ import secrets
 import time
 import stripe
 import logging
-import traceback 
+import traceback
+import random
+import string 
 
 app = FastAPI(title="Visitor Management API", version="1.0.0")
 
@@ -102,6 +104,7 @@ db = client[DATABASE_NAME]
 # Collections
 visitors_collection = db.visitors
 forms_collection = db.forms
+form_submissions_collection = db.form_submissions
 workflows_collection = db.workflows
 companies_collection = db.companies
 locations_collection = db.locations
@@ -489,6 +492,27 @@ def verify_password(plain_password, hashed_password):
     """Simple password verification using SHA-256"""
     return hashlib.sha256(plain_password.encode()).hexdigest() == hashed_password
 
+def generate_linking_code():
+    """Generate a unique 5-character alphanumeric linking code"""
+    characters = string.ascii_uppercase + string.digits
+    # Exclude confusing characters: 0, O, I, 1
+    characters = characters.replace('0', '').replace('O', '').replace('I', '').replace('1', '')
+    return ''.join(random.choices(characters, k=5))
+
+def generate_device_token():
+    """Generate a permanent device token"""
+    import secrets
+    # Generate a secure random token
+    return secrets.token_urlsafe(32)
+
+async def get_unique_linking_code():
+    """Generate a unique linking code that doesn't exist in the database"""
+    while True:
+        code = generate_linking_code()
+        existing = await locations_collection.find_one({"linking_code": code})
+        if not existing:
+            return code
+
 def get_password_hash(password):
     """Simple password hashing using SHA-256"""
     return hashlib.sha256(password.encode()).hexdigest()
@@ -620,6 +644,31 @@ async def get_current_company(current_user: dict = Depends(get_current_user)):
     company["current_user"] = current_user
     company["role"] = current_user.get("role", "company_admin")
     return company
+
+async def get_current_device(device_token: str = Header(None, alias="X-Device-Token")):
+    """Get current authenticated device by device token"""
+    if not device_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Device token required",
+            headers={"X-Device-Token": "Required"},
+        )
+    
+    # Find device by token
+    device = await devices_collection.find_one({"device_token": device_token})
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid device token",
+        )
+    
+    # Update last seen
+    await devices_collection.update_one(
+        {"_id": device["_id"]},
+        {"$set": {"last_seen": datetime.now(timezone.utc)}}
+    )
+    
+    return device
 
 async def validate_location_subscription_from_body(visitor: VisitorData, current_company: dict = Depends(get_current_company)):
     """Validate that a location has an active subscription for visitor creation"""
@@ -866,6 +915,7 @@ async def register_company(registration: CompanyRegistration):
 async def login_user(login: UserLogin):
     """Authenticate a user account"""
     try:
+        logger.info(f"Login attempt for email: {login.email}")
         # Find user by email
         user = await users_collection.find_one({"email": login.email})
         if not user:
@@ -973,6 +1023,66 @@ async def debug_visitor_data(request: Request):
         logger.error(f"Error parsing visitor data: {e}")
         return {"error": str(e), "status": "error"}
 
+# Debug endpoint to see raw login data
+@app.post("/debug/login")
+async def debug_login_data(request: Request):
+    """Debug endpoint to see what login data is being sent"""
+    try:
+        body = await request.json()
+        logger.info(f"Raw login data received: {body}")
+        return {"received": body, "status": "ok"}
+    except Exception as e:
+        logger.error(f"Error parsing login data: {e}")
+        return {"error": str(e), "status": "error"}
+
+# Linking code endpoint
+@app.get("/locations/by-code/{linking_code}")
+async def get_location_by_code(linking_code: str):
+    """Get location and company information by linking code"""
+    try:
+        # Find location by linking code
+        location = await locations_collection.find_one({"linking_code": linking_code.upper()})
+        if not location:
+            raise HTTPException(status_code=404, detail="Invalid linking code")
+        
+        # Get company information
+        company = await companies_collection.find_one({"_id": ObjectId(location["company_id"])})
+        if not company:
+            raise HTTPException(status_code=404, detail="Company not found")
+        
+        # Generate a permanent device token
+        device_token = generate_device_token()
+        device_id = f"DEVICE-{int(time.time())}"
+        
+        # Store the device token in a device record
+        device_record = {
+            "device_id": device_id,
+            "device_token": device_token,
+            "location_id": str(location["_id"]),
+            "company_id": location["company_id"],
+            "device_type": "mobile",
+            "status": "active",
+            "created_at": datetime.now(timezone.utc),
+            "last_seen": datetime.now(timezone.utc)
+        }
+        
+        # Insert device record
+        await devices_collection.insert_one(device_record)
+        
+        return {
+            "location_id": str(location["_id"]),
+            "location_name": location["name"],
+            "company_id": location["company_id"],
+            "company_name": company["name"],
+            "device_token": device_token,
+            "device_id": device_id
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error looking up linking code {linking_code}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to lookup linking code")
+
 # Visitor endpoints
 @app.post("/visitors", response_model=VisitorResponse)
 async def create_visitor(
@@ -1024,6 +1134,128 @@ async def create_visitor(
         
         return visitor_helper(new_visitor)
     except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/device/visitors", response_model=VisitorResponse)
+async def create_visitor_device(
+    visitor: VisitorData,
+    current_device: dict = Depends(get_current_device)
+):
+    """Create a new visitor entry using device authentication"""
+    try:
+        logger.info(f"Creating visitor with device authentication: {visitor.dict()}")
+        
+        # Validate that visitor location matches device location
+        if visitor.location_id != current_device["location_id"]:
+            raise HTTPException(status_code=403, detail="Device not authorized for this location")
+        
+        # Get location to verify it exists and get subscription
+        location = await locations_collection.find_one({"_id": ObjectId(visitor.location_id)})
+        if not location:
+            raise HTTPException(status_code=404, detail="Location not found")
+        
+        # Get the location's subscription
+        subscription = None
+        if location.get("subscription_id"):
+            subscription = await subscriptions_collection.find_one({
+                "_id": ObjectId(location["subscription_id"]),
+                "status": {"$in": ["active", "trialing", "past_due"]}
+            })
+        
+        if not subscription:
+            raise HTTPException(
+                status_code=402, 
+                detail="No active subscription found for this location."
+            )
+        
+        # Validate form exists
+        if visitor.form_id != "default":
+            form = await forms_collection.find_one({"_id": ObjectId(visitor.form_id)})
+            if not form:
+                raise HTTPException(status_code=404, detail="Form not found")
+        
+        visitor_dict = visitor.dict()
+        logger.info(f"Creating visitor with data: {visitor_dict}")
+        result = await visitors_collection.insert_one(visitor_dict)
+        
+        # Get the created visitor
+        new_visitor = await visitors_collection.find_one({"_id": result.inserted_id})
+        
+        # Trigger workflows
+        await trigger_workflows(visitor.form_id, "on_checkin", new_visitor)
+        
+        return visitor_helper(new_visitor)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating visitor with device auth: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/device/visitors", response_model=List[VisitorResponse])
+async def get_visitors_device(
+    status: Optional[VisitorStatus] = None,
+    limit: int = 100,
+    skip: int = 0,
+    current_device: dict = Depends(get_current_device)
+):
+    """Get visitors for device's location using device authentication"""
+    try:
+        query = {"location_id": current_device["location_id"]}
+        if status:
+            query["status"] = status
+        
+        visitors = await visitors_collection.find(query).skip(skip).limit(limit).to_list(length=limit)
+        return [visitor_helper(visitor) for visitor in visitors]
+    except Exception as e:
+        logger.error(f"Error getting visitors with device auth: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/device/visitors/{visitor_id}/checkout", response_model=VisitorResponse)
+async def checkout_visitor_device(
+    visitor_id: str,
+    current_device: dict = Depends(get_current_device)
+):
+    """Check out a visitor using device authentication"""
+    try:
+        # Find the visitor
+        visitor = await visitors_collection.find_one({"_id": ObjectId(visitor_id)})
+        if not visitor:
+            raise HTTPException(status_code=404, detail="Visitor not found")
+        
+        # Validate that visitor belongs to device's location
+        if visitor.get("location_id") != current_device["location_id"]:
+            raise HTTPException(status_code=403, detail="Device not authorized for this visitor")
+        
+        # Check if visitor is already checked out
+        if visitor.get("check_out_time"):
+            raise HTTPException(status_code=400, detail="Visitor is already checked out")
+        
+        # Update visitor with checkout time
+        checkout_time = datetime.now(timezone.utc)
+        result = await visitors_collection.update_one(
+            {"_id": ObjectId(visitor_id)},
+            {
+                "$set": {
+                    "check_out_time": checkout_time,
+                    "status": "checked_out"
+                }
+            }
+        )
+        
+        if result.modified_count == 0:
+            raise HTTPException(status_code=400, detail="Failed to checkout visitor")
+        
+        # Get the updated visitor
+        updated_visitor = await visitors_collection.find_one({"_id": ObjectId(visitor_id)})
+        
+        # Trigger workflows for checkout
+        await trigger_workflows(visitor.get("form_id", "default"), "on_checkout", updated_visitor)
+        
+        return visitor_helper(updated_visitor)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking out visitor with device auth: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/visitors", response_model=List[VisitorResponse])
@@ -1187,17 +1419,18 @@ async def checkout_visitor(
         raise HTTPException(status_code=400, detail=str(e))
 
 # Form endpoints
-@app.post("/forms", response_model=CustomFormResponse)
-async def create_form(form: CustomForm):
-    """Create a new custom form"""
-    try:
-        form_dict = form.dict()
-        result = await forms_collection.insert_one(form_dict)
-        
-        new_form = await forms_collection.find_one({"_id": result.inserted_id})
-        return form_helper(new_form)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+# Commented out - using the more comprehensive form endpoint below that handles device auth
+# @app.post("/forms", response_model=CustomFormResponse)
+# async def create_form(form: CustomForm):
+#     """Create a new custom form"""
+#     try:
+#         form_dict = form.dict()
+#         result = await forms_collection.insert_one(form_dict)
+#         
+#         new_form = await forms_collection.find_one({"_id": result.inserted_id})
+#         return form_helper(new_form)
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/forms", response_model=List[CustomFormResponse])
 async def get_forms():
@@ -1407,7 +1640,8 @@ async def get_locations(current_company: dict = Depends(get_current_company)):
                 "subscription_plan": location.get("subscription_plan"),
                 "devices_count": devices_count,
                 "active_visitors_count": active_visitors_count,
-                "company_name": company_name
+                "company_name": company_name,
+                "linking_code": location.get("linking_code", "")
             })
         
         return result
@@ -1712,6 +1946,7 @@ async def get_company_locations(company_id: str):
                 "devices_count": devices_count,
                 "active_visitors_count": active_visitors_count,
                 "company_name": company["name"],
+                "linking_code": location.get("linking_code", ""),
                 "created_at": location.get("created_at"),
                 "updated_at": location.get("updated_at")
             })
@@ -1795,6 +2030,8 @@ async def create_location(company_id: str, location_data: LocationCreate):
                 "sunday": {"start": "closed", "end": "closed"}
             }
         
+        # Generate unique linking code
+        location_dict["linking_code"] = await get_unique_linking_code()
         location_dict["created_at"] = datetime.now(timezone.utc)
         location_dict["updated_at"] = datetime.now(timezone.utc)
         
@@ -1815,6 +2052,7 @@ async def create_location(company_id: str, location_data: LocationCreate):
             "company_id": new_location["company_id"],
             "name": new_location["name"],
             "subscription_id": new_location["subscription_id"],
+            "linking_code": new_location["linking_code"],
             "address": new_location.get("address"),
             "latitude": new_location.get("latitude"),
             "longitude": new_location.get("longitude"),
@@ -1899,6 +2137,7 @@ async def get_location(location_id: str):
             "devices_count": devices_count,
             "active_visitors_count": active_visitors_count,
             "company_name": company_name,
+            "linking_code": location.get("linking_code", ""),
             "created_at": location.get("created_at"),
             "updated_at": location.get("updated_at")
         }
@@ -3132,6 +3371,465 @@ async def startup_event():
             
     except Exception as e:
         print(f"Error during startup: {e}")
+
+# Workflow endpoints
+@app.get("/workflows", response_model=List[dict])
+async def get_workflows(
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all workflows for the current user's company"""
+    try:
+        # Check if user has admin privileges
+        if current_user.get("role") not in ["admin", "company_admin", "owner"]:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        
+        workflows = await workflows_collection.find(
+            {"company_id": current_user["company_id"]}
+        ).to_list(length=None)
+        
+        # Convert ObjectId to string
+        for workflow in workflows:
+            workflow["id"] = str(workflow.pop("_id"))
+            workflow["createdAt"] = workflow.get("created_at", datetime.utcnow()).isoformat()
+            workflow["updatedAt"] = workflow.get("updated_at", datetime.utcnow()).isoformat()
+        
+        return workflows
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch workflows: {str(e)}")
+
+@app.post("/workflows", response_model=dict)
+async def create_workflow(
+    workflow: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Create a new workflow"""
+    try:
+        # Check if user has admin privileges
+        if current_user.get("role") not in ["admin", "company_admin", "owner"]:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        
+        # Add metadata
+        workflow["company_id"] = current_user["company_id"]
+        workflow["created_by"] = current_user["user_id"]
+        workflow["created_at"] = datetime.utcnow()
+        workflow["updated_at"] = datetime.utcnow()
+        
+        # Remove id if present (will be generated by MongoDB)
+        workflow.pop("id", None)
+        
+        result = await workflows_collection.insert_one(workflow)
+        workflow["id"] = str(result.inserted_id)
+        workflow.pop("_id", None)
+        
+        return workflow
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create workflow: {str(e)}")
+
+@app.put("/workflows/{workflow_id}", response_model=dict)
+async def update_workflow(
+    workflow_id: str,
+    workflow: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update an existing workflow"""
+    try:
+        # Check if user has admin privileges
+        if current_user.get("role") not in ["admin", "company_admin", "owner"]:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        
+        # Verify workflow belongs to user's company
+        existing = await workflows_collection.find_one({
+            "_id": ObjectId(workflow_id),
+            "company_id": current_user["company_id"]
+        })
+        
+        if not existing:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        # Update metadata
+        workflow["updated_at"] = datetime.utcnow()
+        workflow.pop("id", None)
+        workflow.pop("_id", None)
+        
+        await workflows_collection.update_one(
+            {"_id": ObjectId(workflow_id)},
+            {"$set": workflow}
+        )
+        
+        workflow["id"] = workflow_id
+        return workflow
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update workflow: {str(e)}")
+
+@app.delete("/workflows/{workflow_id}")
+async def delete_workflow(
+    workflow_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete a workflow"""
+    try:
+        # Check if user has admin privileges
+        if current_user.get("role") not in ["admin", "company_admin", "owner"]:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        
+        # Verify workflow belongs to user's company
+        existing = await workflows_collection.find_one({
+            "_id": ObjectId(workflow_id),
+            "company_id": current_user["company_id"]
+        })
+        
+        if not existing:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        await workflows_collection.delete_one({"_id": ObjectId(workflow_id)})
+        
+        return {"message": "Workflow deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete workflow: {str(e)}")
+
+# Device endpoint for workflows (read-only)
+@app.get("/device/workflows", response_model=List[dict])
+async def get_device_workflows(
+    current_device: dict = Depends(get_current_device)
+):
+    """Get active workflows for the device's location"""
+    try:
+        # Find active workflows for this company/location
+        query = {
+            "company_id": current_device["company_id"],
+            "status": "active"
+        }
+        
+        # If location-specific workflows are configured
+        if "location_id" in current_device:
+            query["$or"] = [
+                {"location_ids": current_device["location_id"]},
+                {"location_ids": {"$exists": False}},
+                {"location_ids": []}
+            ]
+        
+        workflows = await workflows_collection.find(query).to_list(length=None)
+        
+        # Convert ObjectId to string
+        for workflow in workflows:
+            workflow["id"] = str(workflow.pop("_id"))
+            workflow["createdAt"] = workflow.get("created_at", datetime.utcnow()).isoformat()
+            workflow["updatedAt"] = workflow.get("updated_at", datetime.utcnow()).isoformat()
+        
+        return workflows
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch workflows: {str(e)}")
+
+# Test endpoint for debugging form creation
+@app.post("/forms/test")
+async def test_form_creation(
+    form_data: dict,
+    current_device: dict = Depends(get_current_device)
+):
+    """Test endpoint to debug form creation issues"""
+    return {
+        "received_data": form_data,
+        "device_info": {
+            "device_id": current_device.get("device_id"),
+            "company_id": current_device.get("company_id"),
+        },
+        "validation": {
+            "has_name": bool(form_data.get("name")),
+            "has_category": bool(form_data.get("category")),
+            "name_value": form_data.get("name"),
+            "category_value": form_data.get("category"),
+        }
+    }
+
+# Form Management Endpoints
+@app.get("/forms", response_model=List[dict])
+async def get_forms(
+    current_device: dict = Depends(get_current_device)
+):
+    """Get all forms for the device's company"""
+    try:
+        forms = await forms_collection.find({"company_id": current_device["company_id"]}).to_list(length=None)
+        
+        # Convert ObjectId to string and format dates
+        for form in forms:
+            form["id"] = str(form.pop("_id"))
+            if "created_at" in form:
+                form["createdAt"] = form["created_at"].isoformat()
+            if "updated_at" in form:
+                form["updatedAt"] = form["updated_at"].isoformat()
+            if "last_submission_at" in form and form["last_submission_at"]:
+                form["lastSubmissionAt"] = form["last_submission_at"].isoformat()
+        
+        return forms
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch forms: {str(e)}")
+
+@app.post("/forms", response_model=dict)
+async def create_form(
+    form_data: dict,
+    current_device: dict = Depends(get_current_device)
+):
+    """Create a new form"""
+    logger.info("=== FORM CREATION START ===")
+    try:
+        logger.info(f"Step 1: Received form data with keys: {list(form_data.keys())}")
+        logger.info(f"Form name: {form_data.get('name')}")
+        logger.info(f"Form category: {form_data.get('category')}")
+        logger.info(f"Current device ID: {current_device.get('device_id')}")
+        logger.info(f"Current device company: {current_device.get('company_id')}")
+        
+        logger.info("Step 2: Adding metadata")
+        # Add metadata
+        form_data["company_id"] = current_device["company_id"]
+        form_data["created_by"] = current_device.get("_id", current_device.get("device_id", "unknown"))
+        form_data["created_at"] = datetime.now(timezone.utc)
+        form_data["updated_at"] = datetime.now(timezone.utc)
+        
+        logger.info("Step 3: Processing ID")
+        # Generate unique ID if not provided
+        if "id" not in form_data:
+            # Use milliseconds + random suffix for better uniqueness
+            timestamp_ms = int(time.time() * 1000)
+            random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
+            form_data["id"] = f"form_{timestamp_ms}_{random_suffix}"
+        
+        # Remove the id field for MongoDB insertion
+        form_id = form_data.pop("id")
+        
+        # Check if form ID already exists and generate a new one if needed
+        existing_form = await forms_collection.find_one({"_id": form_id})
+        if existing_form:
+            logger.warning(f"Form ID {form_id} already exists, generating new one")
+            timestamp_ms = int(time.time() * 1000)
+            random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+            form_id = f"form_{timestamp_ms}_{random_suffix}"
+        
+        form_data["_id"] = form_id
+        logger.info(f"Using form ID: {form_id}")
+        
+        logger.info("Step 4: Validating required fields")
+        # Validate required fields before processing
+        if not form_data.get("name"):
+            logger.error("Validation failed: Form name is missing")
+            raise HTTPException(status_code=422, detail="Form name is required")
+        if not form_data.get("category"):
+            logger.error("Validation failed: Form category is missing")
+            raise HTTPException(status_code=422, detail="Form category is required")
+        logger.info("Required fields validation passed")
+        
+        logger.info("Step 5: Ensuring nested objects exist")
+        # Ensure all nested objects are properly structured
+        if "fields" not in form_data:
+            form_data["fields"] = []
+        if "layout" not in form_data:
+            form_data["layout"] = {}
+        if "theme" not in form_data:
+            form_data["theme"] = {}
+        if "settings" not in form_data:
+            form_data["settings"] = {}
+        logger.info("Nested objects validation passed")
+            
+        logger.info(f"Step 6: Attempting database insertion for form ID: {form_id}")
+        try:
+            result = await forms_collection.insert_one(form_data)
+            logger.info(f"Step 7: Database insertion successful. Result: {result.inserted_id}")
+        except Exception as db_error:
+            logger.error(f"Step 7: Database insertion failed: {str(db_error)}")
+            logger.error(f"Error type: {type(db_error)}")
+            raise HTTPException(status_code=422, detail=f"Database error: {str(db_error)}")
+        
+        logger.info("Step 8: Retrieving created form")
+        # Return the created form
+        created_form = await forms_collection.find_one({"_id": form_id})
+        if not created_form:
+            logger.error("Step 8: Form retrieval failed - form not found after creation")
+            raise HTTPException(status_code=500, detail="Form was not created properly")
+            
+        logger.info("Step 9: Formatting response")
+        # Convert to JSON-serializable format
+        response_form = {
+            "id": str(created_form["_id"]),
+            "name": created_form["name"],
+            "description": created_form.get("description", ""),
+            "category": created_form["category"],
+            "status": created_form["status"],
+            "fields": created_form.get("fields", []),
+            "layout": created_form.get("layout", {}),
+            "theme": created_form.get("theme", {}),
+            "settings": created_form.get("settings", {}),
+            "version": created_form.get("version", 1),
+            "location_ids": created_form.get("location_ids", []),
+            "company_id": str(created_form["company_id"]) if created_form.get("company_id") else "",
+            "created_by": str(created_form["created_by"]) if created_form.get("created_by") else "",
+            "created_at": created_form["created_at"].isoformat(),
+            "updated_at": created_form["updated_at"].isoformat(),
+        }
+        
+        logger.info("=== FORM CREATION SUCCESS ===")
+        return response_form
+    except HTTPException as http_ex:
+        logger.error(f"HTTPException raised: {http_ex.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"=== FORM CREATION ERROR ===")
+        logger.error(f"Unexpected error: {str(e)}")
+        logger.error(f"Error type: {type(e)}")
+        logger.error(f"Form data at error: {form_data}")
+        raise HTTPException(status_code=500, detail=f"Failed to create form: {str(e)}")
+
+@app.put("/forms/{form_id}", response_model=dict)
+async def update_form(
+    form_id: str,
+    form_data: dict,
+    current_device: dict = Depends(get_current_device)
+):
+    """Update an existing form"""
+    try:
+        # Check if form exists and belongs to device's company
+        existing_form = await forms_collection.find_one({
+            "_id": form_id,
+            "company_id": current_device["company_id"]
+        })
+        if not existing_form:
+            raise HTTPException(status_code=404, detail="Form not found")
+        
+        # Update metadata
+        form_data["updated_at"] = datetime.now(timezone.utc)
+        if "id" in form_data:
+            form_data.pop("id")  # Remove id from update data
+        
+        # Increment version
+        form_data["version"] = existing_form.get("version", 1) + 1
+        
+        await forms_collection.update_one(
+            {"_id": form_id},
+            {"$set": form_data}
+        )
+        
+        # Return updated form
+        updated_form = await forms_collection.find_one({"_id": form_id})
+        
+        # Convert to JSON-serializable format
+        response_form = {
+            "id": str(updated_form["_id"]),
+            "name": updated_form["name"],
+            "description": updated_form.get("description", ""),
+            "category": updated_form["category"],
+            "status": updated_form["status"],
+            "fields": updated_form.get("fields", []),
+            "layout": updated_form.get("layout", {}),
+            "theme": updated_form.get("theme", {}),
+            "settings": updated_form.get("settings", {}),
+            "version": updated_form.get("version", 1),
+            "location_ids": updated_form.get("location_ids", []),
+            "company_id": str(updated_form["company_id"]) if updated_form.get("company_id") else "",
+            "created_by": str(updated_form["created_by"]) if updated_form.get("created_by") else "",
+            "created_at": updated_form["created_at"].isoformat(),
+            "updated_at": updated_form["updated_at"].isoformat(),
+        }
+        
+        return response_form
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update form: {str(e)}")
+
+@app.delete("/forms/{form_id}")
+async def delete_form(
+    form_id: str,
+    current_device: dict = Depends(get_current_device)
+):
+    """Delete a form"""
+    try:
+        # Check if form exists and belongs to device's company
+        existing_form = await forms_collection.find_one({
+            "_id": form_id,
+            "company_id": current_device["company_id"]
+        })
+        if not existing_form:
+            raise HTTPException(status_code=404, detail="Form not found")
+        
+        # Check if form has submissions
+        submission_count = await form_submissions_collection.count_documents({"form_id": form_id})
+        if submission_count > 0:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Cannot delete form with {submission_count} submissions. Archive it instead."
+            )
+        
+        await forms_collection.delete_one({"_id": form_id})
+        return {"message": "Form deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete form: {str(e)}")
+
+@app.get("/device/forms", response_model=List[dict])
+async def get_device_forms(
+    current_device: dict = Depends(get_current_device)
+):
+    """Get active forms for the device's location"""
+    try:
+        # Find active forms for this company/location
+        query = {
+            "company_id": current_device["company_id"],
+            "status": "active"
+        }
+        
+        # If location-specific forms are configured
+        if "location_id" in current_device:
+            query["$or"] = [
+                {"location_ids": current_device["location_id"]},
+                {"location_ids": {"$exists": False}},
+                {"location_ids": []}
+            ]
+        
+        forms = await forms_collection.find(query).to_list(length=None)
+        
+        # Convert ObjectId to string
+        for form in forms:
+            form["id"] = str(form.pop("_id"))
+            form["createdAt"] = form.get("created_at", datetime.utcnow()).isoformat()
+            form["updatedAt"] = form.get("updated_at", datetime.utcnow()).isoformat()
+        
+        return forms
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch forms: {str(e)}")
+
+# Migration endpoint to add linking codes to existing locations
+@app.post("/admin/migrate-linking-codes")
+async def migrate_linking_codes():
+    """Add linking codes to existing locations that don't have them"""
+    try:
+        # Find locations without linking codes
+        locations_without_codes = await locations_collection.find({"linking_code": {"$exists": False}}).to_list(length=None)
+        
+        updated_count = 0
+        for location in locations_without_codes:
+            # Generate a unique linking code
+            attempts = 0
+            while attempts < 10:  # Limit attempts to prevent infinite loop
+                linking_code = generate_linking_code()
+                existing_location = await locations_collection.find_one({"linking_code": linking_code})
+                if not existing_location:
+                    # Code is unique, use it
+                    await locations_collection.update_one(
+                        {"_id": location["_id"]},
+                        {"$set": {"linking_code": linking_code}}
+                    )
+                    updated_count += 1
+                    break
+                attempts += 1
+            
+            if attempts >= 10:
+                print(f"Failed to generate unique linking code for location {location['_id']}")
+        
+        return {
+            "message": f"Successfully added linking codes to {updated_count} locations",
+            "updated_count": updated_count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Migration failed: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run(

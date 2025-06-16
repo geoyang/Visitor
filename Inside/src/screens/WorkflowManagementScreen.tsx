@@ -23,7 +23,11 @@ import {
 const { width: screenWidth } = Dimensions.get('window');
 const isTablet = screenWidth >= 768;
 
-const WorkflowManagementScreen: React.FC = () => {
+interface WorkflowManagementScreenProps {
+  onBack?: () => void;
+}
+
+const WorkflowManagementScreen: React.FC<WorkflowManagementScreenProps> = ({ onBack }) => {
   const { theme } = useTheme();
   const { config } = useSimpleDeviceConfig();
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -308,7 +312,13 @@ const WorkflowManagementScreen: React.FC = () => {
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={[styles.header, { backgroundColor: theme.colors.headerBackground }]}>
+        {onBack && (
+          <TouchableOpacity style={styles.backButton} onPress={onBack}>
+            <Text style={styles.backButtonText}>← Back</Text>
+          </TouchableOpacity>
+        )}
         <Text style={styles.headerTitle}>Workflow Management</Text>
+        <View style={{ width: 60 }} />
       </View>
       
       <ScrollView style={styles.content}>
@@ -357,6 +367,8 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: 'white',
+    flex: 1,
+    textAlign: 'center',
   },
   backButton: {
     padding: 8,

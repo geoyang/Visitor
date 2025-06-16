@@ -19,6 +19,8 @@ import { useSimpleDeviceConfig } from '../contexts/SimpleDeviceConfig';
 import { ThemeProvider, useTheme } from '../contexts/ThemeContext';
 import { ThemeType } from '../themes/themes';
 import ThemeBackground from './ThemeBackground';
+import WorkflowManagementScreen from '../screens/WorkflowManagementScreen';
+import FormManagementScreen from '../screens/FormManagementScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -82,8 +84,14 @@ function WelcomeScreen({ onStartCheckIn, onOpenSettings }: {
   };
 
   const handleSettingsPress = () => {
+    console.log('Settings icon pressed!', { onOpenSettings: !!onOpenSettings });
+    console.log('onOpenSettings function:', onOpenSettings);
     if (onOpenSettings) {
+      console.log('Calling onOpenSettings...');
       onOpenSettings();
+    } else {
+      console.log('onOpenSettings is not available');
+      Alert.alert('Debug', 'Settings icon clicked but onOpenSettings is not available');
     }
   };
 
@@ -91,25 +99,14 @@ function WelcomeScreen({ onStartCheckIn, onOpenSettings }: {
 
   return (
     <ThemeBackground theme={theme} style={{ flex: 1 }}>
-      {/* Settings Icon */}
-      {onOpenSettings && (
-        <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-          <TouchableOpacity 
-            style={styles.settingsIcon} 
-            onPress={handleSettingsPress}
-            activeOpacity={0.7}
-          >
-            <View style={styles.settingsGearContainer}>
-              {/* Settings gear icon */}
-              <View style={[styles.settingsGear, { backgroundColor: 'rgba(255, 255, 255, 0.9)' }]} />
-              <View style={[styles.settingsTooth1, { backgroundColor: 'rgba(255, 255, 255, 0.9)' }]} />
-              <View style={[styles.settingsTooth2, { backgroundColor: 'rgba(255, 255, 255, 0.9)' }]} />
-              <View style={[styles.settingsTooth3, { backgroundColor: 'rgba(255, 255, 255, 0.9)' }]} />
-              <View style={[styles.settingsTooth4, { backgroundColor: 'rgba(255, 255, 255, 0.9)' }]} />
-            </View>
-          </TouchableOpacity>
-        </Animated.View>
-      )}
+      {/* Settings Icon - Always show for debugging */}
+      <TouchableOpacity 
+        style={styles.settingsIcon} 
+        onPress={handleSettingsPress}
+        activeOpacity={0.7}
+      >
+        <Text style={{ fontSize: 30, color: 'white' }}>⚙️</Text>
+      </TouchableOpacity>
       
       <View style={styles.welcomeContent}>
         {/* Welcome Message */}
@@ -648,6 +645,8 @@ function SettingsScreen() {
   const { theme } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
   const [changingTheme, setChangingTheme] = useState(false);
+  const [showWorkflowManagement, setShowWorkflowManagement] = useState(false);
+  const [showFormManagement, setShowFormManagement] = useState(false);
 
   const handleThemeChange = async (newTheme: 'hightech' | 'lawfirm' | 'metropolitan' | 'zen') => {
     try {
@@ -691,12 +690,38 @@ function SettingsScreen() {
     );
   };
 
+  const handleWorkflowManagement = () => {
+    setShowWorkflowManagement(true);
+  };
+
+  const handleFormManagement = () => {
+    setShowFormManagement(true);
+  };
+
   const themeOptions = [
     { id: 'hightech', name: 'High Tech', emoji: '🚀', color: '#1e40af' },
     { id: 'lawfirm', name: 'Law Firm', emoji: '⚖️', color: '#7c2d12' },
     { id: 'metropolitan', name: 'Metropolitan', emoji: '🏙️', color: '#db2777' },
     { id: 'zen', name: 'Calm Zen', emoji: '🧘', color: '#059669' }
   ];
+
+  // Show workflow management screen if requested
+  if (showWorkflowManagement) {
+    return (
+      <WorkflowManagementScreen 
+        onBack={() => setShowWorkflowManagement(false)}
+      />
+    );
+  }
+
+  // Show form management screen if requested
+  if (showFormManagement) {
+    return (
+      <FormManagementScreen 
+        onBack={() => setShowFormManagement(false)}
+      />
+    );
+  }
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -759,6 +784,46 @@ function SettingsScreen() {
               </TouchableOpacity>
             ))}
           </View>
+        </View>
+
+        {/* Workflow Management Section */}
+        <View style={[styles.settingSection, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Workflow Management</Text>
+          <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>Design and manage visitor workflows</Text>
+          
+          <TouchableOpacity
+            style={[styles.workflowButton, { backgroundColor: theme.colors.primary }]}
+            onPress={handleWorkflowManagement}
+          >
+            <View style={styles.workflowButtonContent}>
+              <Text style={styles.workflowIcon}>⚙️</Text>
+              <View style={styles.workflowButtonText}>
+                <Text style={styles.workflowButtonTitle}>Configure Workflows</Text>
+                <Text style={styles.workflowButtonSubtitle}>Create multi-step visitor processes</Text>
+              </View>
+              <Text style={styles.workflowArrow}>→</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Form Builder Section */}
+        <View style={[styles.settingSection, { backgroundColor: theme.colors.surface }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Form Builder</Text>
+          <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>Create and manage custom visitor forms</Text>
+          
+          <TouchableOpacity
+            style={[styles.workflowButton, { backgroundColor: theme.colors.secondary || '#10b981' }]}
+            onPress={handleFormManagement}
+          >
+            <View style={styles.workflowButtonContent}>
+              <Text style={styles.workflowIcon}>📝</Text>
+              <View style={styles.workflowButtonText}>
+                <Text style={styles.workflowButtonTitle}>Manage Forms</Text>
+                <Text style={styles.workflowButtonSubtitle}>Design custom registration forms</Text>
+              </View>
+              <Text style={styles.workflowArrow}>→</Text>
+            </View>
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity 
@@ -1608,20 +1673,22 @@ const styles = StyleSheet.create({
   // Welcome Screen Settings Icon
   settingsIcon: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? responsivePadding(50) : responsivePadding(30),
-    right: responsivePadding(20),
-    width: responsivePadding(50),
-    height: responsivePadding(50),
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: responsivePadding(25),
+    top: Platform.OS === 'ios' ? 50 : 30,
+    right: 20,
+    width: 60,
+    height: 60,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 10,
+    zIndex: 1000,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.5,
     shadowRadius: 4,
-    elevation: 5,
+    elevation: 10,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   settingsGearContainer: {
     width: responsivePadding(24),
@@ -1663,5 +1730,38 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: responsivePadding(10.5),
     left: 0,
+  },
+  
+  // Workflow Management Button
+  workflowButton: {
+    borderRadius: 12,
+    padding: responsivePadding(16),
+    marginTop: 16,
+  },
+  workflowButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  workflowIcon: {
+    fontSize: responsiveFontSize(24),
+    marginRight: responsivePadding(16),
+  },
+  workflowButtonText: {
+    flex: 1,
+  },
+  workflowButtonTitle: {
+    color: 'white',
+    fontSize: responsiveFontSize(16),
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  workflowButtonSubtitle: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: responsiveFontSize(12),
+  },
+  workflowArrow: {
+    color: 'white',
+    fontSize: responsiveFontSize(18),
+    fontWeight: 'bold',
   },
 });
