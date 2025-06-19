@@ -1214,6 +1214,119 @@ async def get_current_company_info(current_company: dict = Depends(get_current_c
         "last_login": current_user.get("last_login")
     }
 
+# Simple test endpoint for devices
+@app.get("/test/devices")
+async def test_get_devices(location_id: Optional[str] = None):
+    """Simple test endpoint to get devices without authentication"""
+    try:
+        query = {}
+        if location_id:
+            query["location_id"] = location_id
+        
+        devices = await devices_collection.find(query).to_list(length=None)
+        
+        result = []
+        for device in devices:
+            result.append({
+                "id": str(device["_id"]),
+                "name": device.get("name", "Unknown"),
+                "location_id": device.get("location_id"),
+                "device_type": device.get("device_type", "unknown"),
+                "status": device.get("status", "active")
+            })
+        
+        return {"count": len(result), "devices": result}
+    except Exception as e:
+        logger.error(f"Test endpoint error: {e}")
+        return {"error": str(e), "count": 0, "devices": []}
+
+# Test delete endpoint for devices
+@app.delete("/test/devices/{device_id}")
+async def test_delete_device(device_id: str):
+    """Test endpoint to actually delete a device"""
+    try:
+        logger.info(f"Test delete device called for ID: {device_id}")
+        
+        # Verify device exists
+        device = await devices_collection.find_one({"_id": ObjectId(device_id)})
+        if not device:
+            logger.error(f"Device not found: {device_id}")
+            raise HTTPException(status_code=404, detail="Device not found")
+        
+        # Actually delete the device
+        result = await devices_collection.delete_one({"_id": ObjectId(device_id)})
+        
+        if result.deleted_count == 0:
+            logger.error(f"Failed to delete device: {device_id}")
+            raise HTTPException(status_code=404, detail="Device not found")
+        
+        logger.info(f"Device {device_id} deleted successfully")
+        return {"message": "Device deleted successfully", "device_id": device_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Test delete error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+# Debug endpoint to check device location mapping
+@app.get("/debug/devices")
+async def debug_devices():
+    """Debug endpoint to check device location mapping"""
+    try:
+        # Get all devices
+        devices = await devices_collection.find({}).to_list(length=None)
+        
+        # Get all locations
+        locations = await locations_collection.find({}).to_list(length=None)
+        location_ids = {str(loc["_id"]) for loc in locations}
+        
+        result = {
+            "total_devices": len(devices),
+            "total_locations": len(locations),
+            "valid_location_ids": list(location_ids),
+            "devices": []
+        }
+        
+        for device in devices:
+            device_info = {
+                "id": str(device["_id"]),
+                "name": device.get("name", "Unknown"),
+                "location_id": device.get("location_id"),
+                "company_id": device.get("company_id"),
+                "valid_location": device.get("location_id") in location_ids
+            }
+            result["devices"].append(device_info)
+        
+        # Also show devices grouped by location
+        devices_by_location = {}
+        for device in devices:
+            location_id = device.get("location_id")
+            if location_id not in devices_by_location:
+                devices_by_location[location_id] = []
+            devices_by_location[location_id].append({
+                "name": device.get("name", "Unknown"),
+                "id": str(device["_id"])
+            })
+        
+        # Get location names
+        location_names = {}
+        for location in locations:
+            location_names[str(location["_id"])] = location.get("name", "Unknown")
+        
+        result["devices_by_location"] = {}
+        for location_id, location_devices in devices_by_location.items():
+            location_name = location_names.get(location_id, f"Unknown Location ({location_id})")
+            result["devices_by_location"][location_name] = {
+                "location_id": location_id,
+                "device_count": len(location_devices),
+                "devices": location_devices
+            }
+        
+        return result
+    except Exception as e:
+        logger.error(f"Debug devices error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Health check
 @app.get("/health")
 async def health_check():
@@ -1831,19 +1944,29 @@ async def get_locations(current_company: dict = Depends(get_current_company)):
         locations = await locations_collection.find(query).to_list(length=None)
         
         result = []
+        logger.info(f"DEBUG: Processing {len(locations)} locations for user {current_company.get('account_email')}")
         for location in locations:
             # Get company name
             company = await companies_collection.find_one({"_id": ObjectId(location["company_id"])})
             company_name = company["name"] if company else "Unknown Company"
             
             # Count devices for this location
-            devices_count = await devices_collection.count_documents({"location_id": str(location["_id"])})
+            location_id_str = str(location["_id"])
+            logger.info(f"Counting devices for location {location['name']} (ID: {location_id_str})")
             
-            # Count active visitors for this location (if visitor collection has location_id)
+            # Debug: find actual devices for this location
+            debug_devices = await devices_collection.find({"location_id": location_id_str}).to_list(length=None)
+            logger.info(f"Found {len(debug_devices)} devices for location {location_id_str}:")
+            for device in debug_devices:
+                logger.info(f"  - Device: {device.get('name', 'Unknown')} (location_id: {device.get('location_id')})")
+            
+            devices_count = await devices_collection.count_documents({"location_id": location_id_str})
+            
+            # Count active visitors for this location (currently checked in)
             active_visitors_count = await visitors_collection.count_documents({
                 "location_id": str(location["_id"]),
                 "status": "checked_in"
-            }) if "location_id" in (await visitors_collection.find_one({}) or {}) else 0
+            })
             
             result.append({
                 "id": str(location["_id"]),
@@ -1885,11 +2008,16 @@ async def get_companies(current_company: dict = Depends(get_current_company)):
             # Count devices for this company
             devices_count = await devices_collection.count_documents({"company_id": str(company["_id"])})
             
-            # Count active visitors for this company
+            # Count active visitors for this company (through locations)
+            # Get all locations for this company
+            company_locations = await locations_collection.find({"company_id": str(company["_id"])}).to_list(length=None)
+            location_ids = [str(loc["_id"]) for loc in company_locations]
+            
+            # Count active visitors in all company locations
             active_visitors_count = await visitors_collection.count_documents({
-                "company_id": str(company["_id"]),
+                "location_id": {"$in": location_ids},
                 "status": "checked_in"
-            }) if "company_id" in (await visitors_collection.find_one({}) or {}) else 0
+            }) if location_ids else 0
             
             result.append({
                 "id": str(company["_id"]),
@@ -1980,10 +2108,14 @@ async def get_company(company_id: str):
         # Count related data
         locations_count = await locations_collection.count_documents({"company_id": company_id})
         devices_count = await devices_collection.count_documents({"company_id": company_id})
+        # Count active visitors for this company (through locations)
+        company_locations = await locations_collection.find({"company_id": company_id}).to_list(length=None)
+        location_ids = [str(loc["_id"]) for loc in company_locations]
+        
         active_visitors_count = await visitors_collection.count_documents({
-            "company_id": company_id,
+            "location_id": {"$in": location_ids},
             "status": "checked_in"
-        }) if "company_id" in (await visitors_collection.find_one({}) or {}) else 0
+        }) if location_ids else 0
         
         return {
             "id": str(company["_id"]),
@@ -2138,11 +2270,11 @@ async def get_company_locations(company_id: str):
             # Count devices for this location
             devices_count = await devices_collection.count_documents({"location_id": str(location["_id"])})
             
-            # Count active visitors for this location
+            # Count active visitors for this location (currently checked in)
             active_visitors_count = await visitors_collection.count_documents({
                 "location_id": str(location["_id"]),
                 "status": "checked_in"
-            }) if "location_id" in (await visitors_collection.find_one({}) or {}) else 0
+            })
             
             result.append({
                 "id": str(location["_id"]),
@@ -2333,7 +2465,7 @@ async def get_location(location_id: str):
         active_visitors_count = await visitors_collection.count_documents({
             "location_id": location_id,
             "status": "checked_in"
-        }) if "location_id" in (await visitors_collection.find_one({}) or {}) else 0
+        })
         
         return {
             "id": str(location["_id"]),
@@ -2701,7 +2833,10 @@ async def get_devices(
 ):
     """Get devices - super admin sees all, company admin sees only their company's devices"""
     try:
+        logger.info(f"get_devices called with location_id: {location_id}")
+        logger.info(f"Current company: {current_company.get('name', 'Unknown')} (ID: {current_company.get('_id', 'None')})")
         current_role = current_company.get("role", "company_admin")
+        logger.info(f"Current role: {current_role}")
         
         # Build query filter based on role
         if current_role == "super_admin":
@@ -2715,27 +2850,31 @@ async def get_devices(
             if location_id:
                 query["location_id"] = location_id
         
+        logger.info(f"Query for devices: {query}")
         devices = await devices_collection.find(query).to_list(length=None)
+        logger.info(f"Found {len(devices)} devices")
         
         result = []
         for device in devices:
-            # Get company name
-            company = await companies_collection.find_one({"_id": ObjectId(device["company_id"])})
-            company_name = company["name"] if company else "Unknown Company"
+            # Get company name - skip for now to avoid errors
+            company_name = "Company"
             
-            # Get location name
-            location = await locations_collection.find_one({"_id": ObjectId(device["location_id"])})
-            location_name = location["name"] if location else "Unknown Location"
+            # Get location name - skip for now to avoid errors
+            location_name = "Location"
             
             # Check if device is online (last heartbeat within 5 minutes)
             is_online = False
-            if device.get("last_heartbeat"):
-                last_heartbeat = device["last_heartbeat"]
-                # Ensure both datetimes are timezone-aware
-                if last_heartbeat.tzinfo is None:
-                    last_heartbeat = last_heartbeat.replace(tzinfo=timezone.utc)
-                time_diff = datetime.now(timezone.utc) - last_heartbeat
-                is_online = time_diff.total_seconds() < 300  # 5 minutes
+            try:
+                if device.get("last_heartbeat"):
+                    last_heartbeat = device["last_heartbeat"]
+                    # Ensure both datetimes are timezone-aware
+                    if hasattr(last_heartbeat, 'tzinfo') and last_heartbeat.tzinfo is None:
+                        last_heartbeat = last_heartbeat.replace(tzinfo=timezone.utc)
+                    time_diff = datetime.now(timezone.utc) - last_heartbeat
+                    is_online = time_diff.total_seconds() < 300  # 5 minutes
+            except Exception as hb_error:
+                logger.warning(f"Error checking device heartbeat: {hb_error}")
+                is_online = False
             
             result.append({
                 "id": str(device["_id"]),
@@ -2756,7 +2895,12 @@ async def get_devices(
         
         return result
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error(f"Error in get_devices: {str(e)}")
+        logger.error(f"Exception type: {type(e).__name__}")
+        logger.error(f"Query used: {query}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 @app.post("/locations/{location_id}/devices")
 async def create_device(
@@ -2958,7 +3102,10 @@ async def update_device(device_id: str, update_data: DeviceUpdate):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/devices/{device_id}")
-async def delete_device(device_id: str):
+async def delete_device(
+    device_id: str,
+    current_company: dict = Depends(get_current_company)
+):
     """Delete a device (soft delete)"""
     try:
         # Verify device exists

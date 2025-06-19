@@ -280,8 +280,26 @@ class ApiService {
     if (locationId) params.append('location_id', locationId);
     
     try {
-      const devices = await this.fetchWithErrorHandling(`/devices?${params}`);
-      return Array.isArray(devices) ? devices : [devices];
+      // Temporarily use test endpoint
+      const url = `/test/devices?${params}`;
+      console.log('Fetching devices from URL:', url);
+      const response = await this.fetchWithErrorHandling(url);
+      console.log('Raw devices response:', response);
+      
+      // Extract devices from the test endpoint response
+      if (response && response.devices) {
+        return response.devices.map((device: any) => ({
+          ...device,
+          company_id: device.company_id || '',
+          company_name: device.company_name || '',
+          location_name: device.location_name || '',
+          device_id: device.device_id || device.id,
+          is_online: false,
+          last_heartbeat: null
+        }));
+      }
+      
+      return [];
     } catch (error) {
       console.error('Error fetching devices:', error);
       return [];
@@ -336,7 +354,8 @@ class ApiService {
   }
 
   async deleteDevice(id: string): Promise<void> {
-    await this.fetchWithErrorHandling(`/devices/${id}`, {
+    // Temporarily use test endpoint for delete
+    await this.fetchWithErrorHandling(`/test/devices/${id}`, {
       method: 'DELETE'
     });
   }

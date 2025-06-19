@@ -18,6 +18,8 @@ import { apiService, type Location, type Company } from '../services/api';
 import EditLocationModal from './EditLocationModal';
 import AddLocationModal from './AddLocationModal';
 import LocationDetailsModal from './LocationDetailsModal';
+import DeviceManagementModal from './DeviceManagementModal';
+import VisitorManagementModal from './VisitorManagementModal';
 
 const LocationsPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -30,6 +32,8 @@ const LocationsPage: React.FC = () => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [deviceModalOpen, setDeviceModalOpen] = useState(false);
+  const [visitorModalOpen, setVisitorModalOpen] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
 
   useEffect(() => {
@@ -88,6 +92,16 @@ const LocationsPage: React.FC = () => {
   const handleViewLocation = (location: Location) => {
     setSelectedLocation(location);
     setDetailsModalOpen(true);
+  };
+
+  const handleManageDevices = (location: Location) => {
+    setSelectedLocation(location);
+    setDeviceModalOpen(true);
+  };
+
+  const handleManageVisitors = (location: Location) => {
+    setSelectedLocation(location);
+    setVisitorModalOpen(true);
   };
 
   const handleSaveLocation = async (updatedData: Partial<Location>) => {
@@ -270,20 +284,30 @@ const LocationsPage: React.FC = () => {
 
               {/* Stats */}
               <div className="grid grid-cols-3 gap-4 mb-4">
-                <div className="text-center">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => handleManageDevices(location)}
+                  className="text-center p-2 rounded-lg hover:bg-blue-50 transition-colors duration-200"
+                >
                   <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg mx-auto mb-1">
                     <DeviceTabletIcon className="h-4 w-4 text-blue-600" />
                   </div>
                   <p className="text-sm font-medium text-gray-900">{location.devices_count}</p>
                   <p className="text-xs text-gray-500">Devices</p>
-                </div>
-                <div className="text-center">
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => handleManageVisitors(location)}
+                  className="text-center p-2 rounded-lg hover:bg-purple-50 transition-colors duration-200"
+                >
                   <div className="flex items-center justify-center w-8 h-8 bg-purple-100 rounded-lg mx-auto mb-1">
                     <UserGroupIcon className="h-4 w-4 text-purple-600" />
                   </div>
                   <p className="text-sm font-medium text-gray-900">{location.active_visitors_count}</p>
                   <p className="text-xs text-gray-500">Visitors</p>
-                </div>
+                </motion.button>
                 <div className="text-center">
                   <div className="flex items-center justify-center w-8 h-8 bg-orange-100 rounded-lg mx-auto mb-1">
                     <ClockIcon className="h-4 w-4 text-orange-600" />
@@ -371,6 +395,18 @@ const LocationsPage: React.FC = () => {
       <LocationDetailsModal
         isOpen={detailsModalOpen}
         onClose={() => setDetailsModalOpen(false)}
+        location={selectedLocation}
+      />
+
+      <DeviceManagementModal
+        isOpen={deviceModalOpen}
+        onClose={() => setDeviceModalOpen(false)}
+        location={selectedLocation}
+      />
+
+      <VisitorManagementModal
+        isOpen={visitorModalOpen}
+        onClose={() => setVisitorModalOpen(false)}
         location={selectedLocation}
       />
     </div>
