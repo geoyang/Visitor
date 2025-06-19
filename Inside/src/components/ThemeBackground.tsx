@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, ViewStyle } from 'react-native';
+import { View, StyleSheet, ViewStyle, Image, ImageBackground } from 'react-native';
 import { Theme } from '../themes/themes';
 import SimpleAnimatedChipBackground from './SimpleAnimatedChipBackground';
 import WaterfallBackground from './WaterfallBackground';
@@ -11,6 +11,31 @@ interface ThemeBackgroundProps {
 }
 
 const ThemeBackground: React.FC<ThemeBackgroundProps> = ({ theme, style, children }) => {
+  // Check if we have custom theme images (from CustomTheme)
+  const customTheme = theme as any;
+  const hasBackgroundImage = customTheme.images?.background || customTheme.images?.welcomeImage;
+  
+  // Handle image backgrounds first (highest priority)
+  if (hasBackgroundImage) {
+    const imageUri = customTheme.images.background || customTheme.images.welcomeImage;
+    
+    return (
+      <ImageBackground
+        source={{ uri: imageUri }}
+        style={[styles.container, style]}
+        resizeMode="cover"
+      >
+        {/* Dark overlay for better text visibility */}
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0, 0, 0, 0.3)' }]} />
+        
+        {/* Content */}
+        <View style={styles.content}>
+          {children}
+        </View>
+      </ImageBackground>
+    );
+  }
+  
   // Handle animated backgrounds
   if (theme.background.type === 'animated' && theme.background.animated) {
     return (

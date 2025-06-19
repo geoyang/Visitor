@@ -35,6 +35,8 @@ export const EnhancedThemeProvider: React.FC<EnhancedThemeProviderProps> = ({
       
       if (customThemeActivation.isActive && customThemeActivation.theme) {
         // Use custom theme (either from database or local storage)
+        console.log('🎨 Enhanced Theme: Full theme data:', customThemeActivation.theme);
+        console.log('🎨 Enhanced Theme: Theme images:', customThemeActivation.theme.images);
         setCurrentTheme(customThemeActivation.theme);
         setActiveThemeType('custom');
         setIsCustomTheme(true);

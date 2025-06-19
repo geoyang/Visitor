@@ -38,6 +38,8 @@ const FormManagementScreen: React.FC<FormManagementScreenProps> = ({ onBack }) =
   const [selectedField, setSelectedField] = useState<FormField | null>(null);
   const [showFieldConfig, setShowFieldConfig] = useState(false);
 
+  // Let MongoDB generate proper ObjectIds - no client-side generation needed
+
   useEffect(() => {
     fetchForms();
   }, []);
@@ -68,8 +70,22 @@ const FormManagementScreen: React.FC<FormManagementScreenProps> = ({ onBack }) =
       if (response.ok) {
         const data = await response.json();
         console.log('Forms received:', data.length);
-        console.log('Forms data:', JSON.stringify(data, null, 2));
-        setForms(data);
+        console.log('Original forms data:', JSON.stringify(data, null, 2));
+        
+        // Use forms as they come from the server - no client-side ID manipulation
+        const formsWithDates = data.map((form: any) => {
+          console.log('📋 Processing form:', form.name, 'Server ID:', form.id);
+          
+          return {
+            ...form,
+            originalId: form.id, // Keep reference to server ID
+            createdAt: new Date(form.createdAt),
+            updatedAt: new Date(form.updatedAt),
+          };
+        });
+        
+        console.log('Forms processed:', formsWithDates.length);
+        setForms(formsWithDates);
       } else {
         const errorText = await response.text();
         console.error('Failed to fetch forms:', response.status, errorText);
@@ -119,8 +135,11 @@ const FormManagementScreen: React.FC<FormManagementScreenProps> = ({ onBack }) =
       allowAnonymous: true,
     };
 
+    // Let server generate the form ID - no client-side ID generation
+    console.log('📝 Creating new form - server will generate ID');
+    
     const newForm: CustomForm = {
-      id: `form_${Date.now()}`,
+      // No id field - let MongoDB auto-generate _id
       name: 'New Form',
       description: '',
       category: 'visitor',
@@ -135,7 +154,7 @@ const FormManagementScreen: React.FC<FormManagementScreenProps> = ({ onBack }) =
       companyId: config?.companyId || '',
       version: 1,
       totalSubmissions: 0,
-    };
+    } as CustomForm;
 
     setSelectedForm(newForm);
     setShowBuilder(true);
@@ -159,11 +178,18 @@ const FormManagementScreen: React.FC<FormManagementScreenProps> = ({ onBack }) =
         headers['X-Device-Token'] = config.deviceToken;
       }
 
-      const isNew = !forms.find(f => f.id === form.id);
+      const isNew = !form.id || !forms.find(f => f.id === form.id);
       const url = isNew
         ? `${config.serverUrl}/forms`
         : `${config.serverUrl}/forms/${form.id}`;
       const method = isNew ? 'POST' : 'PUT';
+      
+      console.log('📤 Form save details:', {
+        isNew,
+        hasId: !!form.id,
+        method,
+        url
+      });
 
       // Prepare form data for backend - remove frontend-specific fields
       const {
@@ -180,8 +206,7 @@ const FormManagementScreen: React.FC<FormManagementScreenProps> = ({ onBack }) =
         ...cleanForm
       } = form;
 
-      const formData = {
-        id: cleanForm.id,
+      const formData: any = {
         name: cleanForm.name.trim(),
         description: cleanForm.description || '',
         category: cleanForm.category || 'visitor',
@@ -191,10 +216,13 @@ const FormManagementScreen: React.FC<FormManagementScreenProps> = ({ onBack }) =
         theme: cleanForm.theme || {},
         settings: cleanForm.settings || {},
         version: cleanForm.version || 1,
-        location_ids: cleanForm.locationIds || [],
+        location_ids: cleanForm.location_ids || cleanForm.locationIds || [],
         created_by: createdBy || config?.deviceId || 'unknown',
         company_id: companyId || config?.companyId || '',
       };
+      
+      // Don't include ID in the body for PUT requests - it's in the URL
+      // The backend will handle the ID from the URL parameter
 
       console.log('=== FORM SAVE DEBUG ===');
       console.log('Device config:', config);
@@ -262,40 +290,93 @@ const FormManagementScreen: React.FC<FormManagementScreenProps> = ({ onBack }) =
   };
 
   const deleteForm = (formId: string) => {
+    const formToDelete = forms.find(f => f.id === formId);
+    const formName = formToDelete?.name || 'Unknown Form';
+    
+    // Use the server form ID for the API call
+    const formIdToDelete = formToDelete?.id || formId;
+    
     Alert.alert(
       'Delete Form',
-      'Are you sure you want to delete this form?',
+      `Are you sure you want to delete "${formName}"?\n\nThis action cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            if (!config) return;
+            if (!config) {
+              Alert.alert('Error', 'Device not configured');
+              return;
+            }
 
             try {
+              console.log('🗑️ Attempting to delete form:', formName);
+              console.log('🗑️ Using form ID for delete:', formIdToDelete);
+              
               const headers: Record<string, string> = {
                 'Content-Type': 'application/json',
               };
 
               if (config.deviceToken) {
                 headers['X-Device-Token'] = config.deviceToken;
+                console.log('✅ Device token included for delete');
+              } else {
+                console.warn('⚠️ No device token available for delete');
               }
 
+              console.log('🌐 DELETE request to:', `${config.serverUrl}/forms/${formIdToDelete}`);
+              console.log('🔧 Headers:', headers);
+
               const response = await fetch(
-                `${config.serverUrl}/forms/${formId}`,
+                `${config.serverUrl}/forms/${formIdToDelete}`,
                 { method: 'DELETE', headers }
               );
 
+              console.log('📡 Delete response status:', response.status);
+              console.log('📡 Delete response ok:', response.ok);
+
+              // Always read the response body to see what the server says
+              const responseText = await response.text();
+              console.log('📡 Delete response body:', responseText);
+
               if (response.ok) {
-                Alert.alert('Success', 'Form deleted successfully');
+                Alert.alert('Success', `Form "${formName}" deleted successfully`);
+                console.log('✅ Form deleted successfully, refreshing list');
                 await fetchForms();
               } else {
-                Alert.alert('Error', 'Failed to delete form');
+                console.error('❌ Delete failed with status:', response.status);
+                
+                // Handle specific error cases
+                if (response.status === 400 && responseText.includes('submissions')) {
+                  Alert.alert(
+                    'Cannot Delete Form', 
+                    `Form "${formName}" cannot be deleted because it has visitor submissions. Consider deactivating it instead.`,
+                    [
+                      { text: 'OK', style: 'default' },
+                      { 
+                        text: 'Deactivate Instead', 
+                        onPress: () => {
+                          if (formToDelete) {
+                            toggleFormStatus(formToDelete);
+                          }
+                        }
+                      }
+                    ]
+                  );
+                } else if (response.status === 401) {
+                  Alert.alert('Authentication Error', 'Your session has expired. Please refresh your device configuration.');
+                } else if (response.status === 404) {
+                  Alert.alert('Form Not Found', 'This form may have already been deleted.');
+                  // Refresh the list anyway to update the UI
+                  await fetchForms();
+                } else {
+                  Alert.alert('Error', `Failed to delete form (${response.status}): ${responseText}`);
+                }
               }
             } catch (error) {
-              Alert.alert('Error', 'Network error while deleting form');
-              console.error('Delete form error:', error);
+              console.error('❌ Network error while deleting form:', error);
+              Alert.alert('Network Error', `Unable to delete form: ${error.message}`);
             }
           },
         },

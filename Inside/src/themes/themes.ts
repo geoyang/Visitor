@@ -123,12 +123,9 @@ export const highTechTheme: Theme = {
     info: '#3b82f6',
   },
   welcomeImages: [
-    { id: 1, name: 'Check In', emoji: '🔐', color: '#0066ff', description: 'Secure digital entry' },
-    { id: 2, name: 'Meeting', emoji: '💻', color: '#8b5cf6', description: 'Virtual collaboration' },
-    { id:3, name: 'Delivery', emoji: '🚀', color: '#06b6d4', description: 'Express delivery' },
-    { id: 4, name: 'Support', emoji: '⚡', color: '#10b981', description: 'Tech support' },
-    { id: 5, name: 'Guest', emoji: '🔬', color: '#f59e0b', description: 'Innovation visit' },
-    { id: 6, name: 'Tour', emoji: '🌐', color: '#ef4444', description: 'Facility tour' },
+    { id: 1, name: 'Check In', emoji: '🔐', color: '#0066ff', description: 'Visitor check-in' },
+    { id: 2, name: 'Delivery', emoji: '📦', color: '#06b6d4', description: 'Package delivery' },
+    { id: 3, name: 'Check Out', emoji: '🚪', color: '#10b981', description: 'Visitor check-out' },
   ],
   fonts: {
     primary: getFontFamily('system'),
@@ -192,12 +189,9 @@ export const lawFirmTheme: Theme = {
     info: '#1d4ed8',
   },
   welcomeImages: [
-    { id: 1, name: 'Consultation', emoji: '⚖️', color: '#7c2d12', description: 'Legal consultation' },
-    { id: 2, name: 'Meeting', emoji: '📋', color: '#a16207', description: 'Client meeting' },
-    { id: 3, name: 'Appointment', emoji: '📚', color: '#166534', description: 'Scheduled appointment' },
-    { id: 4, name: 'Document', emoji: '📄', color: '#1e40af', description: 'Document review' },
-    { id: 5, name: 'Witness', emoji: '✍️', color: '#7c3aed', description: 'Witness statement' },
-    { id: 6, name: 'Guest', emoji: '🤝', color: '#be123c', description: 'Professional visit' },
+    { id: 1, name: 'Check In', emoji: '🔐', color: '#7c2d12', description: 'Visitor check-in' },
+    { id: 2, name: 'Delivery', emoji: '📦', color: '#a16207', description: 'Package delivery' },
+    { id: 3, name: 'Check Out', emoji: '🚪', color: '#166534', description: 'Visitor check-out' },
   ],
   fonts: {
     primary: getFontFamily('serif'),
@@ -261,12 +255,9 @@ export const metropolitanTheme: Theme = {
     info: '#06b6d4',
   },
   welcomeImages: [
-    { id: 1, name: 'Check In', emoji: '🏙️', color: '#db2777', description: 'City center entry' },
-    { id: 2, name: 'Meeting', emoji: '💼', color: '#7c3aed', description: 'Business meeting' },
-    { id: 3, name: 'Event', emoji: '🎯', color: '#06b6d4', description: 'Corporate event' },
-    { id: 4, name: 'Delivery', emoji: '🚛', color: '#22c55e', description: 'Urban delivery' },
-    { id: 5, name: 'VIP', emoji: '⭐', color: '#eab308', description: 'VIP visit' },
-    { id: 6, name: 'Network', emoji: '🌆', color: '#f43f5e', description: 'Networking event' },
+    { id: 1, name: 'Check In', emoji: '🔐', color: '#db2777', description: 'Visitor check-in' },
+    { id: 2, name: 'Delivery', emoji: '📦', color: '#06b6d4', description: 'Package delivery' },
+    { id: 3, name: 'Check Out', emoji: '🚪', color: '#22c55e', description: 'Visitor check-out' },
   ],
   fonts: {
     primary: getFontFamily('bold'),
@@ -330,12 +321,9 @@ export const zenTheme: Theme = {
     info: '#0284c7',
   },
   welcomeImages: [
-    { id: 1, name: 'Welcome', emoji: '🧘', color: '#059669', description: 'Peaceful entry' },
-    { id: 2, name: 'Wellness', emoji: '💧', color: '#0891b2', description: 'Wellness visit' },
-    { id: 3, name: 'Therapy', emoji: '🌊', color: '#06b6d4', description: 'Therapy session' },
-    { id: 4, name: 'Nature', emoji: '🌿', color: '#10b981', description: 'Nature connection' },
-    { id: 5, name: 'Mindful', emoji: '☯️', color: '#22d3ee', description: 'Mindful visit' },
-    { id: 6, name: 'Harmony', emoji: '🏔️', color: '#059669', description: 'Inner harmony' },
+    { id: 1, name: 'Check In', emoji: '🔐', color: '#059669', description: 'Visitor check-in' },
+    { id: 2, name: 'Delivery', emoji: '📦', color: '#0891b2', description: 'Package delivery' },
+    { id: 3, name: 'Check Out', emoji: '🚪', color: '#10b981', description: 'Visitor check-out' },
   ],
   fonts: {
     primary: getFontFamily('light'),

@@ -24,7 +24,7 @@ export type FormFieldType =
   | 'html';
 
 export type ValidationRule = {
-  type: 'required' | 'minLength' | 'maxLength' | 'pattern' | 'min' | 'max' | 'email' | 'phone' | 'url' | 'custom';
+  type: 'required' | 'minLength' | 'maxLength' | 'pattern' | 'min' | 'max' | 'email' | 'phone' | 'url' | 'number' | 'custom';
   value?: any;
   message?: string;
 };

@@ -17,9 +17,39 @@ import stripe
 import logging
 import traceback
 import random
-import string 
+import string
+import json 
 
-app = FastAPI(title="Visitor Management API", version="1.0.0")
+app = FastAPI(
+    title="Visitor Management API", 
+    version="1.0.0"
+)
+
+# Increase request body size limit to 50MB for image uploads
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response as StarletteResponse
+
+class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, max_size: int = 50 * 1024 * 1024):  # 50MB default
+        super().__init__(app)
+        self.max_size = max_size
+
+    async def dispatch(self, request: StarletteRequest, call_next):
+        # Check content length
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > self.max_size:
+            return StarletteResponse(
+                content="Request entity too large", 
+                status_code=413,
+                headers={"content-type": "text/plain"}
+            )
+        
+        response = await call_next(request)
+        return response
+
+# Add the middleware to increase request size limit
+app.add_middleware(RequestSizeLimitMiddleware, max_size=50 * 1024 * 1024)  # 50MB
 
 # Configure logging
 logging.basicConfig(
@@ -2978,7 +3008,7 @@ async def get_company_themes(
         
         return [
             ThemeResponse(
-                id=str(theme["_id"]),
+                id=theme.get("id", str(theme["_id"])),  # Use custom id if available, otherwise _id
                 name=theme["name"],
                 description=theme.get("description"),
                 category=theme["category"],
@@ -3290,9 +3320,14 @@ async def get_device_themes(current_device: dict = Depends(get_current_device)):
         themes_cursor = themes_collection.find({"companyId": company_id})
         themes = await themes_cursor.to_list(length=None)
         
+        # Log raw formConfig data from each theme document
+        for theme in themes:
+            raw_form_config = theme.get("formConfig", {})
+            logger.info(f"Raw formConfig from theme '{theme.get('name', 'Unknown')}' (ID: {theme.get('_id')}): {raw_form_config}")
+        
         return [
             ThemeResponse(
-                id=str(theme["_id"]),
+                id=theme.get("id", str(theme["_id"])),  # Use custom id if available, otherwise _id
                 name=theme["name"],
                 description=theme.get("description"),
                 category=theme["category"],
@@ -3430,6 +3465,17 @@ async def update_device_theme(
 ):
     """Update a theme for the device's company (device token auth)"""
     try:
+        # Log payload size for debugging
+        payload_size = len(str(theme_update.dict()))
+        logger.info(f"Theme update payload size: {payload_size} bytes ({payload_size / 1024:.2f} KB)")
+        
+        # Check for large images
+        if hasattr(theme_update, 'images') and theme_update.images:
+            image_data = theme_update.images.dict() if hasattr(theme_update.images, 'dict') else theme_update.images
+            for key, value in image_data.items():
+                if value and isinstance(value, str) and len(value) > 1000:
+                    logger.info(f"Large image detected in {key}: {len(value)} characters")
+        
         company_id = current_device.get("company_id")
         if not company_id:
             raise HTTPException(status_code=400, detail="Device not associated with a company")
@@ -3439,6 +3485,9 @@ async def update_device_theme(
         if not existing_theme:
             raise HTTPException(status_code=404, detail="Theme not found or access denied")
         
+        # Log incoming update data
+        logger.info(f"Updating theme {theme_id} with data: {theme_update.dict(exclude_unset=True)}")
+        
         # Build update document
         update_doc = {"updatedAt": datetime.now(timezone.utc)}
         
@@ -3446,8 +3495,12 @@ async def update_device_theme(
             if value is not None:
                 if hasattr(value, 'dict'):  # Pydantic model
                     update_doc[field] = value.dict()
+                    logger.info(f"Setting field {field} with dict value: {value.dict()}")
                 else:
                     update_doc[field] = value.value if hasattr(value, 'value') else value
+                    logger.info(f"Setting field {field} with value: {value}")
+        
+        logger.info(f"Final update document: {update_doc}")
         
         result = await themes_collection.update_one(
             {"id": theme_id, "companyId": company_id},
@@ -3456,6 +3509,10 @@ async def update_device_theme(
         
         if result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Theme not found")
+        
+        # Verify the update by reading back the theme
+        updated_theme = await themes_collection.find_one({"id": theme_id, "companyId": company_id})
+        logger.info(f"Theme after update - formConfig: {updated_theme.get('formConfig', {})}")
         
         return {"message": "Theme updated successfully"}
     except HTTPException:
@@ -3528,8 +3585,11 @@ async def get_active_device_theme(current_device: dict = Depends(get_current_dev
         if activation.get("themeId"):
             theme = await themes_collection.find_one({"id": activation["themeId"], "companyId": company_id})
             if theme:
+                # Log the raw formConfig data from the database
+                logger.info(f"Raw formConfig from database: {theme.get('formConfig', {})}")
+                
                 theme_response = ThemeResponse(
-                    id=str(theme["_id"]),
+                    id=theme.get("id", str(theme["_id"])),
                     name=theme["name"],
                     description=theme.get("description"),
                     category=theme["category"],
@@ -3549,7 +3609,22 @@ async def get_active_device_theme(current_device: dict = Depends(get_current_dev
                     updatedAt=theme["updatedAt"],
                     version=theme.get("version", 1)
                 )
-                return {"theme": theme_response.dict(), "isActive": True}
+                
+                # Log the processed formConfig data after ThemeFormConfig conversion
+                logger.info(f"Processed formConfig in response: {theme_response.formConfig.dict()}")
+                
+                # Log the entire response to see what's being sent
+                response_dict = theme_response.dict()
+                
+                # Convert datetime objects to ISO format strings for JSON serialization
+                if isinstance(response_dict.get('createdAt'), datetime):
+                    response_dict['createdAt'] = response_dict['createdAt'].isoformat()
+                if isinstance(response_dict.get('updatedAt'), datetime):
+                    response_dict['updatedAt'] = response_dict['updatedAt'].isoformat()
+                
+                logger.info(f"Full theme response being sent: {json.dumps(response_dict, indent=2)}")
+                
+                return {"theme": response_dict, "isActive": True}
         
         return {"theme": None, "isActive": False}
     except HTTPException:
@@ -4393,27 +4468,11 @@ async def create_form(
         form_data["created_at"] = datetime.now(timezone.utc)
         form_data["updated_at"] = datetime.now(timezone.utc)
         
-        logger.info("Step 3: Processing ID")
-        # Generate unique ID if not provided
-        if "id" not in form_data:
-            # Use milliseconds + random suffix for better uniqueness
-            timestamp_ms = int(time.time() * 1000)
-            random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
-            form_data["id"] = f"form_{timestamp_ms}_{random_suffix}"
-        
-        # Remove the id field for MongoDB insertion
-        form_id = form_data.pop("id")
-        
-        # Check if form ID already exists and generate a new one if needed
-        existing_form = await forms_collection.find_one({"_id": form_id})
-        if existing_form:
-            logger.warning(f"Form ID {form_id} already exists, generating new one")
-            timestamp_ms = int(time.time() * 1000)
-            random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-            form_id = f"form_{timestamp_ms}_{random_suffix}"
-        
-        form_data["_id"] = form_id
-        logger.info(f"Using form ID: {form_id}")
+        logger.info("Step 3: Processing ID - Let MongoDB auto-generate ObjectId")
+        # Remove any client-sent ID - let MongoDB handle _id generation like visitors do
+        form_data.pop("id", None)  # Remove id if present
+        # Don't set _id manually - let MongoDB auto-generate proper ObjectId
+        logger.info("Will use MongoDB auto-generated ObjectId (like visitors)")
         
         logger.info("Step 4: Validating required fields")
         # Validate required fields before processing
@@ -4437,18 +4496,18 @@ async def create_form(
             form_data["settings"] = {}
         logger.info("Nested objects validation passed")
             
-        logger.info(f"Step 6: Attempting database insertion for form ID: {form_id}")
+        logger.info("Step 6: Attempting database insertion with MongoDB auto-generated ObjectId")
         try:
             result = await forms_collection.insert_one(form_data)
-            logger.info(f"Step 7: Database insertion successful. Result: {result.inserted_id}")
+            logger.info(f"Step 7: Database insertion successful. Auto-generated ObjectId: {result.inserted_id}")
         except Exception as db_error:
             logger.error(f"Step 7: Database insertion failed: {str(db_error)}")
             logger.error(f"Error type: {type(db_error)}")
             raise HTTPException(status_code=422, detail=f"Database error: {str(db_error)}")
         
-        logger.info("Step 8: Retrieving created form")
-        # Return the created form
-        created_form = await forms_collection.find_one({"_id": form_id})
+        logger.info("Step 8: Retrieving created form with MongoDB ObjectId")
+        # Return the created form using the auto-generated ObjectId
+        created_form = await forms_collection.find_one({"_id": result.inserted_id})
         if not created_form:
             logger.error("Step 8: Form retrieval failed - form not found after creation")
             raise HTTPException(status_code=500, detail="Form was not created properly")
@@ -4492,14 +4551,29 @@ async def update_form(
     current_device: dict = Depends(get_current_device)
 ):
     """Update an existing form"""
+    logger.info(f"=== FORM UPDATE REQUEST ===")
+    logger.info(f"Form ID: {form_id}")
+    logger.info(f"Update data keys: {list(form_data.keys())}")
+    
     try:
+        # Convert string ID to ObjectId
+        try:
+            object_id = ObjectId(form_id)
+            logger.info(f"Converted form_id to ObjectId: {object_id}")
+        except Exception as e:
+            logger.error(f"Invalid form ID format: {form_id}, Error: {str(e)}")
+            raise HTTPException(status_code=400, detail="Invalid form ID format")
+        
         # Check if form exists and belongs to device's company
         existing_form = await forms_collection.find_one({
-            "_id": form_id,
+            "_id": object_id,
             "company_id": current_device["company_id"]
         })
         if not existing_form:
+            logger.error(f"Form not found with ID: {object_id} for company: {current_device['company_id']}")
             raise HTTPException(status_code=404, detail="Form not found")
+        
+        logger.info(f"Found existing form: {existing_form.get('name', 'Unknown')}")
         
         # Update metadata
         form_data["updated_at"] = datetime.now(timezone.utc)
@@ -4509,21 +4583,29 @@ async def update_form(
         # Increment version
         form_data["version"] = existing_form.get("version", 1) + 1
         
+        logger.info(f"Updating form with version: {form_data['version']}")
+        
         await forms_collection.update_one(
-            {"_id": form_id},
+            {"_id": object_id},
             {"$set": form_data}
         )
         
-        # Return updated form
-        updated_form = await forms_collection.find_one({"_id": form_id})
+        logger.info("Form updated in database, retrieving updated form...")
         
-        # Convert to JSON-serializable format
+        # Return updated form
+        updated_form = await forms_collection.find_one({"_id": object_id})
+        
+        if not updated_form:
+            logger.error("Failed to retrieve updated form")
+            raise HTTPException(status_code=500, detail="Failed to retrieve updated form")
+        
+        # Convert to JSON-serializable format with safe field access
         response_form = {
             "id": str(updated_form["_id"]),
-            "name": updated_form["name"],
+            "name": updated_form.get("name", ""),
             "description": updated_form.get("description", ""),
-            "category": updated_form["category"],
-            "status": updated_form["status"],
+            "category": updated_form.get("category", "general"),
+            "status": updated_form.get("status", "active"),
             "fields": updated_form.get("fields", []),
             "layout": updated_form.get("layout", {}),
             "theme": updated_form.get("theme", {}),
@@ -4532,14 +4614,19 @@ async def update_form(
             "location_ids": updated_form.get("location_ids", []),
             "company_id": str(updated_form["company_id"]) if updated_form.get("company_id") else "",
             "created_by": str(updated_form["created_by"]) if updated_form.get("created_by") else "",
-            "created_at": updated_form["created_at"].isoformat(),
-            "updated_at": updated_form["updated_at"].isoformat(),
+            "created_at": updated_form["created_at"].isoformat() if updated_form.get("created_at") else datetime.now(timezone.utc).isoformat(),
+            "updated_at": updated_form["updated_at"].isoformat() if updated_form.get("updated_at") else datetime.now(timezone.utc).isoformat(),
         }
         
+        logger.info(f"=== FORM UPDATE SUCCESS ===")
         return response_form
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"=== FORM UPDATE ERROR ===")
+        logger.error(f"Unexpected error during form update: {str(e)}")
+        logger.error(f"Error type: {type(e)}")
+        logger.error(f"Form ID: {form_id}")
         raise HTTPException(status_code=500, detail=f"Failed to update form: {str(e)}")
 
 @app.delete("/forms/{form_id}")
@@ -4549,9 +4636,15 @@ async def delete_form(
 ):
     """Delete a form"""
     try:
+        # Convert string ID to ObjectId
+        try:
+            object_id = ObjectId(form_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid form ID format")
+        
         # Check if form exists and belongs to device's company
         existing_form = await forms_collection.find_one({
-            "_id": form_id,
+            "_id": object_id,
             "company_id": current_device["company_id"]
         })
         if not existing_form:
@@ -4565,7 +4658,7 @@ async def delete_form(
                 detail=f"Cannot delete form with {submission_count} submissions. Archive it instead."
             )
         
-        await forms_collection.delete_one({"_id": form_id})
+        await forms_collection.delete_one({"_id": object_id})
         return {"message": "Form deleted successfully"}
     except HTTPException:
         raise
@@ -4640,10 +4733,22 @@ async def migrate_linking_codes():
         raise HTTPException(status_code=500, detail=f"Migration failed: {str(e)}")
 
 if __name__ == "__main__":
-    uvicorn.run(
+    import uvicorn
+    
+    # Configure uvicorn with larger limits
+    config = uvicorn.Config(
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=True,
+        loop="asyncio",
+        # Increase these limits for larger payloads
+        limit_max_requests=1000,
+        limit_concurrency=100,
+        # Most importantly, increase the max request size
+        h11_max_incomplete_event_size=50 * 1024 * 1024,  # 50MB
     )
+    
+    server = uvicorn.Server(config)
+    server.run()
             

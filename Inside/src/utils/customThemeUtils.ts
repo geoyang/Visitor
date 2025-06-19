@@ -8,12 +8,15 @@ export interface CustomThemeActivation {
   isActive: boolean;
   theme?: Theme;
   originalThemeId?: string;
+  formConfig?: any; // Add formConfig to the activation
 }
 
 // Convert CustomTheme to the app's Theme format
 export const convertCustomThemeToAppTheme = (customTheme: CustomTheme): Theme => {
-  return {
+  // Create the base theme object with images included
+  const convertedTheme: Theme & { images?: any } = {
     name: customTheme.name,
+    images: customTheme.images, // Include the images from CustomTheme
     colors: {
       primary: customTheme.colors.primary,
       primaryDark: customTheme.colors.primary, // Use primary as fallback
@@ -33,15 +36,15 @@ export const convertCustomThemeToAppTheme = (customTheme: CustomTheme): Theme =>
     },
     welcomeImages: [
       { id: 1, name: 'Check In', emoji: '🔐', color: customTheme.colors.primary, description: 'Visitor check-in' },
-      { id: 2, name: 'Meeting', emoji: '💼', color: customTheme.colors.secondary, description: 'Business meeting' },
-      { id: 3, name: 'Delivery', emoji: '📦', color: customTheme.colors.info, description: 'Package delivery' },
-      { id: 4, name: 'Support', emoji: '🛠️', color: customTheme.colors.warning, description: 'Technical support' },
-      { id: 5, name: 'Guest', emoji: '👥', color: customTheme.colors.success, description: 'Guest visit' },
-      { id: 6, name: 'Tour', emoji: '🏢', color: customTheme.colors.error, description: 'Facility tour' },
+      { id: 2, name: 'Delivery', emoji: '📦', color: customTheme.colors.info, description: 'Package delivery' },
+      { id: 3, name: 'Check Out', emoji: '🚪', color: customTheme.colors.success, description: 'Visitor check-out' },
     ],
     fonts: {
       primary: customTheme.fonts.primary,
-      secondary: customTheme.fonts.heading,
+      secondary: customTheme.fonts.secondary || customTheme.fonts.primary,
+      heading: customTheme.fonts.heading,
+      body: customTheme.fonts.body,
+      button: customTheme.fonts.button,
       weights: {
         light: '300',
         regular: '400',
@@ -79,6 +82,8 @@ export const convertCustomThemeToAppTheme = (customTheme: CustomTheme): Theme =>
       },
     },
   };
+  
+  return convertedTheme as Theme;
 };
 
 // Get active custom theme
@@ -108,6 +113,7 @@ export const getActiveCustomTheme = async (config?: any): Promise<CustomThemeAct
               isActive: true,
               theme: appTheme,
               originalThemeId: activeThemeData.theme.id,
+              formConfig: activeThemeData.theme.formConfig, // Include formConfig
             };
           }
         }
@@ -125,6 +131,7 @@ export const getActiveCustomTheme = async (config?: any): Promise<CustomThemeAct
         isActive: true,
         theme: appTheme,
         originalThemeId: customTheme.id,
+        formConfig: customTheme.formConfig, // Include formConfig from local storage
       };
     }
     return { isActive: false };

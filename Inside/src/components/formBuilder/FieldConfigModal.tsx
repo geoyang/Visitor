@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -32,6 +32,54 @@ const FieldConfigModal: React.FC<FieldConfigModalProps> = ({
   React.useEffect(() => {
     setEditedField(field);
   }, [field]);
+
+  // Automatically add email validation when field type is email
+  useEffect(() => {
+    if (editedField && editedField.type === 'email') {
+      const validation = editedField.validation || [];
+      const hasEmailValidation = validation.some(rule => rule.type === 'email');
+      
+      if (!hasEmailValidation) {
+        const newEmailRule: ValidationRule = {
+          type: 'email',
+          message: 'Please enter a valid email address',
+        };
+        updateField({ validation: [...validation, newEmailRule] });
+      }
+    }
+  }, [editedField?.type]);
+
+  // Automatically add number validation when field type is number
+  useEffect(() => {
+    if (editedField && editedField.type === 'number') {
+      const validation = editedField.validation || [];
+      const hasNumberValidation = validation.some(rule => rule.type === 'number');
+      
+      if (!hasNumberValidation) {
+        const newNumberRule: ValidationRule = {
+          type: 'number',
+          message: 'Please enter a valid number',
+        };
+        updateField({ validation: [...validation, newNumberRule] });
+      }
+    }
+  }, [editedField?.type]);
+
+  // Automatically add phone validation when field type is phone
+  useEffect(() => {
+    if (editedField && editedField.type === 'phone') {
+      const validation = editedField.validation || [];
+      const hasPhoneValidation = validation.some(rule => rule.type === 'phone');
+      
+      if (!hasPhoneValidation) {
+        const newPhoneRule: ValidationRule = {
+          type: 'phone',
+          message: 'Please enter a valid phone number',
+        };
+        updateField({ validation: [...validation, newPhoneRule] });
+      }
+    }
+  }, [editedField?.type]);
 
   if (!editedField) return null;
 

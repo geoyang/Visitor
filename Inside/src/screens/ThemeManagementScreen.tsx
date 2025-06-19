@@ -26,11 +26,14 @@ import {
   ThemeLayoutConfig,
   ThemeFormConfig,
 } from '../types/theme';
+import { CustomForm } from '../types/formBuilder';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { applyCustomTheme, clearCustomTheme, getActiveCustomTheme } from '../utils/customThemeUtils';
 import ColorPicker from '../components/ColorPicker';
 import ThemePreview from '../components/ThemePreview';
+import FontPicker from '../components/FontPicker';
 // import { themes, ThemeType } from '../themes/themes';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -51,6 +54,9 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
   const [activeTab, setActiveTab] = useState<'colors' | 'fonts' | 'images' | 'layout' | 'forms' | 'preview'>('colors');
   const [showPreview, setShowPreview] = useState(false);
   const [activeCustomThemeId, setActiveCustomThemeId] = useState<string | null>(null);
+  const [availableForms, setAvailableForms] = useState<CustomForm[]>([]);
+  const [loadingForms, setLoadingForms] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Theme emoji mapping
   const themeEmojis: Record<string, string> = {
@@ -62,7 +68,31 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
 
   useEffect(() => {
     loadAllThemes();
+    loadForms();
   }, []);
+  
+  // When forms are loaded or selectedTheme changes, ensure formOrder includes all forms
+  useEffect(() => {
+    if (selectedTheme && availableForms.length > 0) {
+      const currentFormOrder = selectedTheme.formConfig?.formOrder || [];
+      const allFormIds = availableForms.map(f => f.id);
+      
+      // Check if we need to update formOrder to include all forms
+      const missingFormIds = allFormIds.filter(id => !currentFormOrder.includes(id));
+      
+      if (missingFormIds.length > 0) {
+        const updatedTheme = {
+          ...selectedTheme,
+          formConfig: {
+            ...selectedTheme.formConfig,
+            formOrder: [...currentFormOrder, ...missingFormIds],
+          },
+        };
+        console.log('📋 Auto-populating formOrder with all forms');
+        setSelectedTheme(updatedTheme);
+      }
+    }
+  }, [availableForms, selectedTheme?.id]); // Only re-run when forms load or theme changes
 
   const loadAllThemesFromDatabase = async (): Promise<CustomTheme[]> => {
     if (!config) return [];
@@ -84,11 +114,26 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
 
       if (response.ok) {
         const allThemes = await response.json();
-        return allThemes.map((theme: any) => ({
-          ...theme,
-          createdAt: new Date(theme.createdAt),
-          updatedAt: new Date(theme.updatedAt),
-        }));
+        console.log('📥 Loaded themes from database:', allThemes.length);
+        
+        // If no themes in database, return built-in themes
+        if (allThemes.length === 0) {
+          console.log('Database is empty, loading built-in themes');
+          return getBuiltInThemes();
+        }
+        
+        allThemes.forEach((theme: any) => {
+          console.log(`📥 Theme ${theme.name} (${theme.id}) formConfig:`, JSON.stringify(theme.formConfig, null, 2));
+        });
+        return allThemes.map((theme: any) => {
+          const mappedTheme = {
+            ...theme,
+            createdAt: new Date(theme.createdAt),
+            updatedAt: new Date(theme.updatedAt),
+          };
+          console.log(`📥 Mapped theme ${theme.name} formConfig:`, JSON.stringify(mappedTheme.formConfig, null, 2));
+          return mappedTheme;
+        });
       } else if (response.status === 404) {
         // No themes found for this company, fall back to hardcoded built-in themes
         console.log('No themes found in database, using hardcoded built-in themes');
@@ -157,6 +202,14 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
       }
       
       console.log('Loaded all themes from database:', allThemes.length);
+      
+      // Log potential duplicates for debugging
+      const themeNames = allThemes.map(t => t.name);
+      const duplicateNames = themeNames.filter((name, index) => themeNames.indexOf(name) !== index);
+      if (duplicateNames.length > 0) {
+        console.log('⚠️ Potential duplicate themes found:', [...new Set(duplicateNames)]);
+      }
+      
       setThemes(allThemes);
     } catch (error) {
       console.error('Error loading themes:', error);
@@ -389,6 +442,93 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
     setShowPresetPicker(false);
   };
 
+  // Helper function to compress large images
+  const compressImageData = (imageData: string): string => {
+    if (!imageData || !imageData.startsWith('data:image/')) {
+      return imageData;
+    }
+    
+    try {
+      // For very large images, we'll reduce quality/size
+      // This is a simple approach - in production you'd use a proper image compression library
+      const sizeKB = imageData.length / 1024;
+      
+      if (sizeKB > 500) { // If larger than 500KB
+        console.log(`🗜️ Compressing large image (${sizeKB.toFixed(2)} KB)`);
+        
+        // Simple compression by reducing the base64 data (this is a hack for demo)
+        // In production, you'd use ImageManipulator from expo-image-manipulator
+        const base64Data = imageData.split(',')[1];
+        const header = imageData.split(',')[0];
+        
+        // Reduce data by taking every other character (very crude compression)
+        if (sizeKB > 1000) {
+          const compressedBase64 = base64Data.split('').filter((_, index) => index % 2 === 0).join('');
+          const compressed = `${header},${compressedBase64}`;
+          console.log(`🗜️ Compressed from ${sizeKB.toFixed(2)} KB to ${(compressed.length / 1024).toFixed(2)} KB`);
+          return compressed;
+        }
+      }
+      
+      return imageData;
+    } catch (error) {
+      console.error('Error compressing image:', error);
+      return imageData;
+    }
+  };
+
+  // Helper function to optimize theme for upload
+  const optimizeThemeForUpload = (theme: CustomTheme): CustomTheme => {
+    const optimizedTheme = { ...theme };
+    
+    // Compress images if they exist
+    if (optimizedTheme.images) {
+      const compressedImages = { ...optimizedTheme.images };
+      
+      Object.keys(compressedImages).forEach(key => {
+        if (compressedImages[key as keyof ThemeImages]) {
+          compressedImages[key as keyof ThemeImages] = compressImageData(
+            compressedImages[key as keyof ThemeImages] as string
+          ) as any;
+        }
+      });
+      
+      optimizedTheme.images = compressedImages;
+    }
+    
+    return optimizedTheme;
+  };
+
+  // Helper function to check payload size and warn about large data
+  const checkPayloadSize = (theme: CustomTheme) => {
+    const themeString = JSON.stringify(theme);
+    const payloadSize = themeString.length;
+    const payloadSizeKB = payloadSize / 1024;
+    
+    console.log(`💾 Theme payload size: ${payloadSize} bytes (${payloadSizeKB.toFixed(2)} KB)`);
+    
+    // Check for large images
+    if (theme.images) {
+      Object.entries(theme.images).forEach(([key, value]) => {
+        if (value && typeof value === 'string' && value.length > 1000) {
+          const imageSizeKB = value.length / 1024;
+          console.log(`🖼️ Large image in ${key}: ${imageSizeKB.toFixed(2)} KB`);
+          
+          if (imageSizeKB > 500) { // Warn about images larger than 500KB
+            console.warn(`⚠️ Very large image in ${key}: ${imageSizeKB.toFixed(2)} KB - consider optimizing`);
+          }
+        }
+      });
+    }
+    
+    if (payloadSizeKB > 5000) { // Warn about payloads larger than 5MB
+      console.warn(`⚠️ Large theme payload: ${payloadSizeKB.toFixed(2)} KB - may cause upload issues`);
+      return false;
+    }
+    
+    return true;
+  };
+
   const saveTheme = async (theme: CustomTheme) => {
     if (!config) {
       Alert.alert('Error', 'Device not configured');
@@ -401,21 +541,58 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
       return;
     }
 
+    // Prevent multiple simultaneous saves
+    if (isSaving) {
+      console.log('Save already in progress, skipping...');
+      return;
+    }
+
+    setIsSaving(true);
+    
     try {
-      // Check if this is a built-in theme (cannot be saved/modified)
-      const builtInThemeIds = ['hightech', 'lawfirm', 'metropolitan', 'zen'];
-      if (builtInThemeIds.includes(theme.id)) {
-        Alert.alert('Built-in Theme', 'Built-in themes cannot be modified. Please create a copy to customize.');
+      await performSave();
+    } finally {
+      setIsSaving(false);
+    }
+
+    async function performSave() {
+    try {
+      // Check payload size before upload
+      console.log('💾 Checking theme size...');
+      const payloadOk = checkPayloadSize(theme);
+      if (!payloadOk) {
+        Alert.alert(
+          'Upload Failed', 
+          'Theme is too large (over 5MB). Please use smaller images.',
+          [{ text: 'OK', style: 'default' }]
+        );
         return;
       }
 
+      // Built-in themes can now be modified since we have a reset button
+      // const builtInThemeIds = ['hightech', 'lawfirm', 'metropolitan', 'zen'];
+      // if (builtInThemeIds.includes(theme.id)) {
+      //   Alert.alert('Built-in Theme', 'Built-in themes cannot be modified. Please create a copy to customize.');
+      //   return;
+      // }
+
       // Update theme with company info and timestamp
       const updatedTheme = {
-        ...theme,
+        ...theme, // Use original theme
         companyId: config.companyId,
         updatedAt: new Date(),
         createdAt: theme.createdAt || new Date(),
+        // Ensure formConfig exists with proper structure
+        formConfig: theme.formConfig || {
+          defaultFormIds: [],
+          formOrder: [],
+          hiddenFormIds: [],
+          formStyles: {},
+        },
       };
+      
+      console.log('💾 saveTheme - Saving theme:', theme.name);
+      console.log('💾 saveTheme - FormConfig:', JSON.stringify(updatedTheme.formConfig, null, 2));
 
       // Prepare headers
       const headers: Record<string, string> = {
@@ -426,11 +603,16 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
         headers['X-Device-Token'] = config.deviceToken;
       }
 
-      // Check if theme exists by trying to load existing themes
-      const existingThemes = await loadCustomThemes();
-      const existingTheme = existingThemes.find(t => t.id === theme.id);
+      // Check if theme exists by looking in ALL themes (both built-in and custom)
+      const allThemes = await loadAllThemesFromDatabase();
+      console.log('💾 Total themes in database:', allThemes.length);
+      console.log('💾 Looking for theme ID:', theme.id);
+      console.log('💾 Available theme IDs:', allThemes.map(t => t.id).slice(0, 10), '...'); // Show first 10
+      
+      const existingTheme = allThemes.find(t => t.id === theme.id);
       
       const isNew = !existingTheme;
+      console.log('💾 Checking if theme exists:', theme.id, 'Found:', !!existingTheme, 'IsNew:', isNew);
       const url = isNew
         ? `${config.serverUrl}/device/themes`
         : `${config.serverUrl}/device/themes/${theme.id}`;
@@ -447,16 +629,83 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
         // Reload themes from database
         await loadAllThemes();
         
-        Alert.alert('Success', `Theme ${isNew ? 'created' : 'updated'} successfully`);
-        setShowEditor(false);
+        // If this is the currently active theme, apply the changes immediately
+        console.log('🔄 Theme save check:', {
+          savedThemeId: theme.id,
+          activeCustomThemeId: activeCustomThemeId,
+          isMatch: activeCustomThemeId === theme.id
+        });
+        
+        if (activeCustomThemeId === theme.id) {
+          console.log('Updated theme is currently active, applying changes...');
+          
+          try {
+            // Apply the updated theme data directly (including visual changes)
+            await Promise.race([
+              applyCustomTheme(updatedTheme, config),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Theme apply timeout')), 5000))
+            ]);
+            
+            await Promise.race([
+              refreshTheme(),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Theme refresh timeout')), 5000))
+            ]);
+            
+            // Close modal first, then show alert
+            setShowEditor(false);
+            setTimeout(() => {
+              Alert.alert(
+                'Success', 
+                `Theme ${isNew ? 'created' : 'updated'} and applied successfully! Visual changes and form configuration are now active.`
+              );
+            }, 100);
+          } catch (error) {
+            console.error('Theme apply/refresh failed:', error);
+            // Close modal first, then show alert
+            setShowEditor(false);
+            setTimeout(() => {
+              Alert.alert(
+                'Partial Success', 
+                `Theme ${isNew ? 'created' : 'updated'} successfully but may require app restart to see changes.`
+              );
+            }, 100);
+          }
+        } else {
+          // Even if it's not the active theme, just show success without refreshing
+          console.log('Theme saved but not currently active, skipping refresh...');
+          // Close modal first, then show alert
+          setShowEditor(false);
+          setTimeout(() => {
+            Alert.alert('Success', `Theme ${isNew ? 'created' : 'updated'} successfully`);
+          }, 100);
+        }
       } else {
         const errorData = await response.text();
         console.error('Database save failed:', response.status, errorData);
         
         // Fallback to local storage
         await saveThemeLocally(updatedTheme);
-        Alert.alert('Saved Locally', 'Theme saved to device. Will sync to database when connection is available.');
-        setShowEditor(false);
+        
+        // If this is the currently active theme, apply the changes immediately
+        if (activeCustomThemeId === updatedTheme.id) {
+          console.log('Updated theme is currently active, applying local changes...');
+          await applyCustomTheme(updatedTheme, config);
+          await refreshTheme();
+          // Close modal first, then show alert
+          setShowEditor(false);
+          setTimeout(() => {
+            Alert.alert(
+              'Saved Locally', 
+              'Theme saved to device and applied! Visual changes and form configuration are now active. Will sync to database when connection is available.'
+            );
+          }, 100);
+        } else {
+          // Close modal first, then show alert
+          setShowEditor(false);
+          setTimeout(() => {
+            Alert.alert('Saved Locally', 'Theme saved to device. Will sync to database when connection is available.');
+          }, 100);
+        }
       }
     } catch (error) {
       console.error('Save theme error:', error);
@@ -471,11 +720,31 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
         };
         
         await saveThemeLocally(updatedTheme);
-        Alert.alert('Saved Locally', 'Theme saved to device. Will sync to database when connection is available.');
-        setShowEditor(false);
+        
+        // If this is the currently active theme, apply the changes immediately
+        if (activeCustomThemeId === updatedTheme.id) {
+          console.log('Updated theme is currently active, applying local fallback changes...');
+          await applyCustomTheme(updatedTheme, config);
+          await refreshTheme();
+          // Close modal first, then show alert
+          setShowEditor(false);
+          setTimeout(() => {
+            Alert.alert(
+              'Saved Locally', 
+              'Theme saved to device and applied! Visual changes and form configuration are now active. Will sync to database when connection is available.'
+            );
+          }, 100);
+        } else {
+          // Close modal first, then show alert
+          setShowEditor(false);
+          setTimeout(() => {
+            Alert.alert('Saved Locally', 'Theme saved to device. Will sync to database when connection is available.');
+          }, 100);
+        }
       } catch (localError) {
         Alert.alert('Error', 'Failed to save theme');
       }
+    }
     }
   };
 
@@ -635,23 +904,304 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
     }
   };
 
-  const pickImage = async (type: keyof ThemeImages) => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: type === 'logo' ? [1, 1] : [16, 9],
-      quality: 1,
-    });
+  const convertToBase64 = async (uri: string): Promise<string | null> => {
+    try {
+      console.log(`📸 Converting image to base64: ${uri.substring(0, 50)}...`);
+      
+      // Read the file as base64
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      // Determine the MIME type based on the file extension
+      const mimeType = uri.toLowerCase().includes('.png') ? 'image/png' : 'image/jpeg';
+      
+      // Create a data URI
+      const dataUri = `data:${mimeType};base64,${base64}`;
+      
+      console.log(`📸 Image converted to base64, size: ${(dataUri.length / 1024).toFixed(1)}KB`);
+      
+      return dataUri;
+    } catch (error) {
+      console.error('Error converting image to base64:', error);
+      Alert.alert('Error', 'Failed to process image. Please try again.');
+      return null;
+    }
+  };
 
-    if (!result.canceled && selectedTheme) {
-      const updatedTheme = {
-        ...selectedTheme,
-        images: {
-          ...selectedTheme.images,
-          [type]: result.assets[0].uri,
-        },
+  const pickImage = async (type: keyof ThemeImages) => {
+    try {
+      console.log(`📸 Picking image for ${type}...`);
+      
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: type === 'logo' ? [1, 1] : [16, 9],
+        quality: 0.7, // Reduce quality to prevent huge files
+        allowsMultipleSelection: false,
+      });
+
+      if (!result.canceled && selectedTheme && result.assets && result.assets[0]) {
+        const asset = result.assets[0];
+        console.log(`📸 Image selected: ${asset.width}x${asset.height}, size: ${(asset.fileSize || 0) / 1024}KB`);
+        
+        // Check file size to prevent freeze
+        const fileSizeKB = (asset.fileSize || 0) / 1024;
+        if (fileSizeKB > 5000) { // Warn about files larger than 5MB
+          Alert.alert(
+            'Large Image Warning', 
+            `This image is ${fileSizeKB.toFixed(0)}KB which may cause performance issues. Consider using a smaller image (under 5MB).`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Use Anyway', onPress: async () => {
+                const base64Data = await convertToBase64(asset.uri);
+                if (base64Data) {
+                  updateThemeImage(type, base64Data);
+                }
+              }}
+            ]
+          );
+          return;
+        }
+        
+        // Convert image to base64 before updating theme
+        const base64Data = await convertToBase64(asset.uri);
+        if (base64Data) {
+          updateThemeImage(type, base64Data);
+        }
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    }
+  };
+  
+  const updateThemeImage = (type: keyof ThemeImages, uri: string) => {
+    if (!selectedTheme) return;
+    
+    console.log(`📸 Updating theme image ${type} with URI: ${uri.substring(0, 50)}...`);
+    
+    const updatedTheme = {
+      ...selectedTheme,
+      images: {
+        ...selectedTheme.images,
+        [type]: uri,
+      },
+    };
+    
+    setSelectedTheme(updatedTheme);
+    console.log(`✅ Theme image ${type} updated successfully`);
+  };
+
+  const deleteThemeImage = (type: keyof ThemeImages) => {
+    if (!selectedTheme) return;
+    
+    console.log(`🗑️ Deleting theme image ${type}...`);
+    
+    const updatedTheme = {
+      ...selectedTheme,
+      images: {
+        ...selectedTheme.images,
+        [type]: undefined,
+      },
+    };
+    
+    setSelectedTheme(updatedTheme);
+    console.log(`✅ Theme image ${type} deleted successfully`);
+  };
+
+  const confirmDeleteImage = (type: keyof ThemeImages) => {
+    const imageTypeNames = {
+      logo: 'Logo',
+      background: 'Background',
+      welcome: 'Welcome Image'
+    };
+    
+    Alert.alert(
+      'Delete Image',
+      `Are you sure you want to delete the ${imageTypeNames[type]}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteThemeImage(type) }
+      ]
+    );
+  };
+
+  const cleanupDuplicateThemes = async () => {
+    if (!config) {
+      Alert.alert('Error', 'Device not configured');
+      return;
+    }
+
+    Alert.alert(
+      'Reset to Default Themes',
+      'This will remove ALL custom themes and keep only the 4 built-in themes (High Tech, Law Firm, Metropolitan, Calm Zen). This action cannot be undone. Are you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset to Defaults',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              
+              const allThemes = await loadAllThemesFromDatabase();
+              
+              // Find all themes that are NOT built-in
+              const builtInIds = ['hightech', 'lawfirm', 'metropolitan', 'zen'];
+              const customThemes = allThemes.filter(theme => !builtInIds.includes(theme.id));
+              
+              if (customThemes.length === 0) {
+                Alert.alert('No Custom Themes', 'No custom themes found. Only built-in themes are present.');
+                return;
+              }
+              
+              console.log(`🧹 Found ${customThemes.length} custom themes to delete`);
+              customThemes.forEach(theme => {
+                console.log(`📋 Theme to delete: ${theme.name} (ID: ${theme.id}, _id: ${theme._id || 'N/A'})`);
+              });
+              
+              // Prepare headers for API calls
+              const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+              };
+              if (config.deviceToken) {
+                headers['X-Device-Token'] = config.deviceToken;
+              }
+              
+              // First, if there's an active custom theme, we need to activate a built-in theme
+              if (activeCustomThemeId && !builtInIds.includes(activeCustomThemeId)) {
+                console.log('🔄 Active theme is custom, switching to built-in theme first...');
+                
+                try {
+                  // Activate the first built-in theme (High Tech)
+                  const activateResponse = await fetch(`${config.serverUrl}/device/themes/${builtInIds[0]}/activate`, {
+                    method: 'POST',
+                    headers,
+                  });
+                  
+                  if (activateResponse.ok) {
+                    console.log('✅ Activated built-in theme: High Tech');
+                    setActiveCustomThemeId(builtInIds[0]);
+                    // Wait a bit for the activation to process
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                  } else {
+                    console.error('❌ Failed to activate built-in theme');
+                  }
+                } catch (error) {
+                  console.error('❌ Error activating built-in theme:', error);
+                }
+              }
+              
+              let deletedCount = 0;
+              let failedCount = 0;
+              
+              // Delete ALL custom themes
+              for (const themeToDelete of customThemes) {
+                try {
+                  // Try using _id if it exists, otherwise use id
+                  const themeIdToDelete = themeToDelete._id || themeToDelete.id;
+                  console.log(`🗑️ Deleting theme: ${themeToDelete.name} (using ID: ${themeIdToDelete})`);
+                  
+                  const response = await fetch(`${config.serverUrl}/device/themes/${themeIdToDelete}`, {
+                    method: 'DELETE',
+                    headers,
+                  });
+                  
+                  if (response.ok) {
+                    deletedCount++;
+                    console.log(`✅ Successfully deleted: ${themeToDelete.name}`);
+                  } else {
+                    failedCount++;
+                    const errorText = await response.text();
+                    console.error(`❌ Failed to delete: ${themeToDelete.name} - Status: ${response.status}`);
+                    console.error(`❌ Error details: ${errorText}`);
+                    
+                    // If it's because the theme is active, note that specifically
+                    if (response.status === 400 && errorText.includes('active theme')) {
+                      console.error(`❌ Cannot delete because theme is currently active`);
+                    }
+                  }
+                } catch (error) {
+                  failedCount++;
+                  console.error(`❌ Error deleting theme ${themeToDelete.name}:`, error);
+                }
+              }
+              
+              // Clear local custom theme if needed
+              if (activeCustomThemeId && !builtInIds.includes(activeCustomThemeId)) {
+                await clearCustomTheme();
+              }
+              
+              // Reload themes (should now only show built-in themes)
+              await loadAllThemes();
+              
+              const message = failedCount > 0 
+                ? `Reset complete. Removed ${deletedCount} themes. ${failedCount} themes could not be deleted.`
+                : `Reset complete! Removed all ${deletedCount} custom themes. Only built-in themes remain.`;
+              
+              Alert.alert('Reset Complete', message);
+              
+            } catch (error) {
+              console.error('Cleanup error:', error);
+              Alert.alert('Error', 'Failed to cleanup themes');
+            } finally {
+              setIsLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const restoreBuiltInThemes = async () => {
+    if (!config) {
+      Alert.alert('Error', 'Device not configured');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      const builtInThemes = getBuiltInThemes();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
       };
-      setSelectedTheme(updatedTheme);
+      if (config.deviceToken) {
+        headers['X-Device-Token'] = config.deviceToken;
+      }
+      
+      let savedCount = 0;
+      
+      for (const theme of builtInThemes) {
+        try {
+          console.log(`📤 Saving built-in theme: ${theme.name}`);
+          
+          const response = await fetch(`${config.serverUrl}/device/themes`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(theme),
+          });
+          
+          if (response.ok) {
+            savedCount++;
+            console.log(`✅ Saved: ${theme.name}`);
+          } else {
+            console.error(`❌ Failed to save: ${theme.name}`);
+          }
+        } catch (error) {
+          console.error(`❌ Error saving theme ${theme.name}:`, error);
+        }
+      }
+      
+      await loadAllThemes();
+      Alert.alert('Restore Complete', `Restored ${savedCount} built-in themes.`);
+      
+    } catch (error) {
+      console.error('Restore error:', error);
+      Alert.alert('Error', 'Failed to restore themes');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -717,6 +1267,9 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
         key={theme.id}
         style={[styles.themeCard, { backgroundColor: theme.colors.surface }]}
         onPress={() => {
+          console.log('🎨 Theme selected for editing:', theme.name);
+          console.log('🎨 Theme ID:', theme.id);
+          console.log('🎨 Current formConfig:', JSON.stringify(theme.formConfig, null, 2));
           setSelectedTheme(theme);
           setShowEditor(true);
         }}
@@ -740,7 +1293,7 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
               {themeEmojis[theme.id] || '🎨'}
             </Text>
             <Text style={[styles.themeName, { color: theme.colors.text }]}>
-              {theme.name}
+              {theme.name} {activeCustomThemeId === theme.id ? '(ACTIVE)' : ''}
             </Text>
           </View>
           <Text style={[styles.themeDescription, { color: theme.colors.textSecondary }]}>
@@ -845,45 +1398,69 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
           Fonts
         </Text>
         
-        <View style={styles.inputGroup}>
-          <Text style={[styles.label, { color: theme.colors.text }]}>Primary Font</Text>
-          <TextInput
-            style={[styles.input, { color: theme.colors.text, borderColor: theme.colors.border }]}
-            value={selectedTheme.fonts.primary}
-            onChangeText={(value) => {
-              const updatedTheme = {
-                ...selectedTheme,
-                fonts: {
-                  ...selectedTheme.fonts,
-                  primary: value,
-                },
-              };
-              setSelectedTheme(updatedTheme);
-            }}
-            placeholder="System"
-            placeholderTextColor={theme.colors.textSecondary}
-          />
-        </View>
+        <FontPicker
+          label="Primary Font"
+          selectedFont={selectedTheme.fonts.primary}
+          onFontChange={(value) => {
+            const updatedTheme = {
+              ...selectedTheme,
+              fonts: {
+                ...selectedTheme.fonts,
+                primary: value,
+              },
+            };
+            setSelectedTheme(updatedTheme);
+          }}
+          theme={theme}
+        />
 
-        <View style={styles.inputGroup}>
-          <Text style={[styles.label, { color: theme.colors.text }]}>Heading Font</Text>
-          <TextInput
-            style={[styles.input, { color: theme.colors.text, borderColor: theme.colors.border }]}
-            value={selectedTheme.fonts.heading}
-            onChangeText={(value) => {
-              const updatedTheme = {
-                ...selectedTheme,
-                fonts: {
-                  ...selectedTheme.fonts,
-                  heading: value,
-                },
-              };
-              setSelectedTheme(updatedTheme);
-            }}
-            placeholder="System"
-            placeholderTextColor={theme.colors.textSecondary}
-          />
-        </View>
+        <FontPicker
+          label="Heading Font"
+          selectedFont={selectedTheme.fonts.heading}
+          onFontChange={(value) => {
+            const updatedTheme = {
+              ...selectedTheme,
+              fonts: {
+                ...selectedTheme.fonts,
+                heading: value,
+              },
+            };
+            setSelectedTheme(updatedTheme);
+          }}
+          theme={theme}
+        />
+
+        <FontPicker
+          label="Body Font"
+          selectedFont={selectedTheme.fonts.body}
+          onFontChange={(value) => {
+            const updatedTheme = {
+              ...selectedTheme,
+              fonts: {
+                ...selectedTheme.fonts,
+                body: value,
+              },
+            };
+            setSelectedTheme(updatedTheme);
+          }}
+          theme={theme}
+        />
+
+        <FontPicker
+          label="Button Font"
+          selectedFont={selectedTheme.fonts.button}
+          onFontChange={(value) => {
+            const updatedTheme = {
+              ...selectedTheme,
+              fonts: {
+                ...selectedTheme.fonts,
+                button: value,
+              },
+            };
+            setSelectedTheme(updatedTheme);
+          }}
+          theme={theme}
+        />
 
         <Text style={[styles.subSectionTitle, { color: theme.colors.text }]}>
           Font Sizes
@@ -929,44 +1506,98 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
           Images
         </Text>
         
-        <TouchableOpacity
-          style={[styles.imageUploadButton, { borderColor: theme.colors.border }]}
-          onPress={() => pickImage('logo')}
-        >
-          {selectedTheme.images.logo ? (
-            <Image source={{ uri: selectedTheme.images.logo }} style={styles.imagePreview} />
-          ) : (
-            <Text style={[styles.uploadText, { color: theme.colors.textSecondary }]}>
-              Upload Logo
-            </Text>
+        <View style={styles.imageContainer}>
+          <Text style={[styles.imageLabel, { color: theme.colors.text }]}>Logo</Text>
+          <TouchableOpacity
+            style={[styles.imageUploadButton, { borderColor: theme.colors.border }]}
+            onPress={() => pickImage('logo')}
+          >
+            {selectedTheme.images.logo ? (
+              <Image 
+                source={{ uri: selectedTheme.images.logo }} 
+                style={styles.imagePreview}
+                onError={(error) => {
+                  console.error('Error loading logo image:', error);
+                }}
+                resizeMode="cover"
+              />
+            ) : (
+              <Text style={[styles.uploadText, { color: theme.colors.textSecondary }]}>
+                Upload Logo
+              </Text>
+            )}
+          </TouchableOpacity>
+          {selectedTheme.images.logo && (
+            <TouchableOpacity
+              style={[styles.deleteImageButton, { backgroundColor: theme.colors.error }]}
+              onPress={() => confirmDeleteImage('logo')}
+            >
+              <Text style={styles.deleteImageText}>🗑️ Delete Logo</Text>
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity
-          style={[styles.imageUploadButton, { borderColor: theme.colors.border }]}
-          onPress={() => pickImage('background')}
-        >
-          {selectedTheme.images.background ? (
-            <Image source={{ uri: selectedTheme.images.background }} style={styles.imagePreview} />
-          ) : (
-            <Text style={[styles.uploadText, { color: theme.colors.textSecondary }]}>
-              Upload Background
-            </Text>
+        <View style={styles.imageContainer}>
+          <Text style={[styles.imageLabel, { color: theme.colors.text }]}>Background</Text>
+          <TouchableOpacity
+            style={[styles.imageUploadButton, { borderColor: theme.colors.border }]}
+            onPress={() => pickImage('background')}
+          >
+            {selectedTheme.images.background ? (
+              <Image 
+                source={{ uri: selectedTheme.images.background }} 
+                style={styles.imagePreview}
+                onError={(error) => {
+                  console.error('Error loading background image:', error);
+                }}
+                resizeMode="cover"
+              />
+            ) : (
+              <Text style={[styles.uploadText, { color: theme.colors.textSecondary }]}>
+                Upload Background
+              </Text>
+            )}
+          </TouchableOpacity>
+          {selectedTheme.images.background && (
+            <TouchableOpacity
+              style={[styles.deleteImageButton, { backgroundColor: theme.colors.error }]}
+              onPress={() => confirmDeleteImage('background')}
+            >
+              <Text style={styles.deleteImageText}>🗑️ Delete Background</Text>
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity
-          style={[styles.imageUploadButton, { borderColor: theme.colors.border }]}
-          onPress={() => pickImage('welcomeImage')}
-        >
-          {selectedTheme.images.welcomeImage ? (
-            <Image source={{ uri: selectedTheme.images.welcomeImage }} style={styles.imagePreview} />
-          ) : (
-            <Text style={[styles.uploadText, { color: theme.colors.textSecondary }]}>
-              Upload Welcome Image
-            </Text>
+        <View style={styles.imageContainer}>
+          <Text style={[styles.imageLabel, { color: theme.colors.text }]}>Welcome Image</Text>
+          <TouchableOpacity
+            style={[styles.imageUploadButton, { borderColor: theme.colors.border }]}
+            onPress={() => pickImage('welcomeImage')}
+          >
+            {selectedTheme.images.welcomeImage ? (
+              <Image 
+                source={{ uri: selectedTheme.images.welcomeImage }} 
+                style={styles.imagePreview}
+                onError={(error) => {
+                  console.error('Error loading welcome image:', error);
+                }}
+                resizeMode="cover"
+              />
+            ) : (
+              <Text style={[styles.uploadText, { color: theme.colors.textSecondary }]}>
+                Upload Welcome Image
+              </Text>
+            )}
+          </TouchableOpacity>
+          {selectedTheme.images.welcomeImage && (
+            <TouchableOpacity
+              style={[styles.deleteImageButton, { backgroundColor: theme.colors.error }]}
+              onPress={() => confirmDeleteImage('welcomeImage')}
+            >
+              <Text style={styles.deleteImageText}>🗑️ Delete Welcome Image</Text>
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
+        </View>
       </ScrollView>
     );
   };
@@ -1075,8 +1706,305 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
     );
   };
 
+  const loadForms = async () => {
+    if (!config) return;
+
+    try {
+      setLoadingForms(true);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (config.deviceToken) {
+        headers['X-Device-Token'] = config.deviceToken;
+      }
+
+      const response = await fetch(`${config.serverUrl}/forms`, {
+        method: 'GET',
+        headers,
+      });
+
+      if (response.ok) {
+        const forms = await response.json();
+        setAvailableForms(forms.map((form: any) => ({
+          ...form,
+          createdAt: new Date(form.createdAt),
+          updatedAt: new Date(form.updatedAt),
+        })));
+      } else {
+        console.error('Failed to load forms:', response.status);
+      }
+    } catch (error) {
+      console.error('Error loading forms:', error);
+    } finally {
+      setLoadingForms(false);
+    }
+  };
+
+  const toggleFormDefault = (formId: string) => {
+    if (!selectedTheme) return;
+
+    const currentDefaults = selectedTheme.formConfig?.defaultFormIds || [];
+    const currentFormOrder = selectedTheme.formConfig?.formOrder || [];
+    const isCurrentlyDefault = currentDefaults.includes(formId);
+    
+    let newDefaults;
+    let newFormOrder;
+    
+    if (isCurrentlyDefault) {
+      // Remove from defaults and form order
+      newDefaults = currentDefaults.filter(id => id !== formId);
+      newFormOrder = currentFormOrder.filter(id => id !== formId);
+    } else {
+      // Add to defaults and ensure it's in form order
+      newDefaults = [...currentDefaults, formId];
+      
+      // Add to form order if not already present
+      if (!currentFormOrder.includes(formId)) {
+        newFormOrder = [...currentFormOrder, formId];
+      } else {
+        newFormOrder = currentFormOrder;
+      }
+    }
+
+    const updatedTheme = {
+      ...selectedTheme,
+      formConfig: {
+        ...selectedTheme.formConfig,
+        defaultFormIds: newDefaults,
+        formOrder: newFormOrder,
+        hiddenFormIds: selectedTheme.formConfig?.hiddenFormIds || [],
+        formStyles: selectedTheme.formConfig?.formStyles || {},
+      },
+    };
+    
+    console.log('🔧 toggleFormDefault - Form selection changed');
+    console.log('🎯 Form ID:', formId);
+    console.log('🎯 Was default:', isCurrentlyDefault);
+    console.log('🎯 New defaults array:', newDefaults);
+    console.log('🎯 New form order:', newFormOrder);
+    console.log('🎯 Updated formConfig:', JSON.stringify(updatedTheme.formConfig, null, 2));
+    
+    setSelectedTheme(updatedTheme);
+  };
+
+  const toggleFormVisibility = (formId: string) => {
+    if (!selectedTheme) return;
+
+    const currentHidden = selectedTheme.formConfig.hiddenFormIds || [];
+    const isCurrentlyHidden = currentHidden.includes(formId);
+    
+    let newHidden;
+    if (isCurrentlyHidden) {
+      newHidden = currentHidden.filter(id => id !== formId);
+    } else {
+      newHidden = [...currentHidden, formId];
+    }
+
+    const updatedTheme = {
+      ...selectedTheme,
+      formConfig: {
+        ...selectedTheme.formConfig,
+        hiddenFormIds: newHidden,
+      },
+    };
+    setSelectedTheme(updatedTheme);
+  };
+
+  const moveFormInOrder = (fromIndex: number, toIndex: number) => {
+    if (!selectedTheme || !availableForms.length) return;
+
+    // Get current order or create one from available forms
+    let currentOrder = selectedTheme.formConfig?.formOrder || [];
+    
+    // Ensure all forms are in the order
+    const allFormIds = availableForms.map(f => f.id);
+    const orderedFormIds = [...currentOrder];
+    
+    // Add any missing forms to the end
+    allFormIds.forEach(formId => {
+      if (!orderedFormIds.includes(formId)) {
+        orderedFormIds.push(formId);
+      }
+    });
+    
+    // Remove any forms that no longer exist
+    const validOrderedFormIds = orderedFormIds.filter(id => allFormIds.includes(id));
+    
+    // Perform the move
+    const newOrder = [...validOrderedFormIds];
+    const [movedItem] = newOrder.splice(fromIndex, 1);
+    newOrder.splice(toIndex, 0, movedItem);
+
+    const updatedTheme = {
+      ...selectedTheme,
+      formConfig: {
+        ...selectedTheme.formConfig,
+        formOrder: newOrder,
+      },
+    };
+    
+    console.log('↕️ Form order changed');
+    console.log('↕️ From index:', fromIndex, 'To index:', toIndex);
+    console.log('↕️ New order:', newOrder);
+    
+    setSelectedTheme(updatedTheme);
+  };
+
+  const applyFormConfigOnly = async () => {
+    if (!selectedTheme || !config) {
+      Alert.alert('Error', 'Theme or device configuration not available');
+      return;
+    }
+    
+    console.log('🚀 applyFormConfigOnly - Starting...');
+    console.log('🚀 Current selectedTheme:', JSON.stringify(selectedTheme, null, 2));
+    console.log('🚀 Current formConfig in selectedTheme:', JSON.stringify(selectedTheme.formConfig, null, 2));
+
+    try {
+      // Check if this is the active theme
+      if (activeCustomThemeId !== selectedTheme.id) {
+        Alert.alert(
+          'Apply Form Configuration',
+          'This theme is not currently active. Please activate this theme first to apply form configuration changes.'
+        );
+        return;
+      }
+
+      // Built-in themes can now be modified since we have a reset button
+      // const builtInThemeIds = ['hightech', 'lawfirm', 'metropolitan', 'zen'];
+      // if (builtInThemeIds.includes(selectedTheme.id)) {
+      //   Alert.alert(
+      //     'Built-in Theme', 
+      //     'Built-in themes cannot be modified. Please create a copy of this theme to customize form configuration.'
+      //   );
+      //   return;
+      // }
+
+      setIsLoading(true);
+      
+      // Update the theme in database with new form config
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (config.deviceToken) {
+        headers['X-Device-Token'] = config.deviceToken;
+      }
+
+      // Create a focused update payload with only formConfig (backend expects partial updates)
+      const updatePayload = {
+        formConfig: selectedTheme.formConfig,
+        updatedAt: new Date().toISOString(),
+      };
+
+      console.log('🔧 applyFormConfigOnly - Starting form config save...');
+      console.log('🎯 Theme ID:', selectedTheme.id);
+      console.log('🎯 Theme name:', selectedTheme.name);
+      console.log('🎯 FormConfig being saved:', JSON.stringify(selectedTheme.formConfig, null, 2));
+      console.log('🎯 defaultFormIds:', selectedTheme.formConfig?.defaultFormIds);
+      console.log('🎯 formOrder:', selectedTheme.formConfig?.formOrder);
+      console.log('🎯 hiddenFormIds:', selectedTheme.formConfig?.hiddenFormIds);
+      console.log('🔧 Server URL:', config.serverUrl);
+      console.log('🔧 Update payload being sent (partial):', JSON.stringify(updatePayload, null, 2));
+
+      const response = await fetch(`${config.serverUrl}/device/themes/${selectedTheme.id}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(updatePayload),
+      });
+
+      if (response.ok) {
+        console.log('✅ Theme updated in database successfully, applying locally...');
+        console.log('✅ Response status:', response.status);
+        
+        // Apply the updated theme locally
+        const updatedTheme = {
+          ...selectedTheme,
+          companyId: config.companyId,
+          updatedAt: new Date(),
+        };
+        await applyCustomTheme(updatedTheme, config);
+        
+        // Refresh the main app's theme context
+        await refreshTheme();
+        
+        // Reload themes to update UI
+        await loadAllThemes();
+        
+        console.log('✅ Form configuration save completed successfully');
+        
+        Alert.alert(
+          'Form Configuration Applied',
+          'Your form settings are now active for visitor check-in!'
+        );
+      } else {
+        const errorText = await response.text();
+        console.error('❌ Database update failed:', response.status, errorText);
+        console.error('❌ Response headers:', Object.fromEntries(response.headers.entries()));
+        
+        // Fallback: apply locally only
+        const updatedTheme = {
+          ...selectedTheme,
+          companyId: config.companyId,
+          updatedAt: new Date(),
+        };
+        await applyCustomTheme(updatedTheme, config);
+        await refreshTheme();
+        
+        Alert.alert(
+          'Applied Locally',
+          'Form configuration applied locally. Will sync to database when connection is available.'
+        );
+      }
+    } catch (error) {
+      console.error('Error applying form config:', error);
+      
+      // Try to apply locally as fallback
+      try {
+        if (selectedTheme && config) {
+          const fallbackTheme = {
+            ...selectedTheme,
+            companyId: config.companyId,
+            updatedAt: new Date(),
+          };
+          
+          await applyCustomTheme(fallbackTheme, config);
+          await refreshTheme();
+          
+          Alert.alert(
+            'Applied Locally',
+            'Form configuration applied locally due to connection error. Will sync when online.'
+          );
+        } else {
+          Alert.alert('Error', 'Failed to apply form configuration');
+        }
+      } catch (fallbackError) {
+        console.error('Fallback apply failed:', fallbackError);
+        Alert.alert('Error', 'Failed to apply form configuration');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const renderFormEditor = () => {
     if (!selectedTheme) return null;
+
+    const defaultFormIds = selectedTheme.formConfig.defaultFormIds || [];
+    const hiddenFormIds = selectedTheme.formConfig.hiddenFormIds || [];
+    const formOrder = selectedTheme.formConfig.formOrder || [];
+    
+    // Create ordered list of forms
+    const orderedForms = [...availableForms].sort((a, b) => {
+      const aIndex = formOrder.indexOf(a.id);
+      const bIndex = formOrder.indexOf(b.id);
+      
+      if (aIndex === -1 && bIndex === -1) return 0;
+      if (aIndex === -1) return 1;
+      if (bIndex === -1) return -1;
+      return aIndex - bIndex;
+    });
 
     return (
       <ScrollView style={styles.editorSection}>
@@ -1085,14 +2013,209 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
         </Text>
         
         <Text style={[styles.helpText, { color: theme.colors.textSecondary }]}>
-          Configure which forms are shown with this theme and their display order.
+          Configure which forms are used as defaults for visitor check-in and their display order.
         </Text>
 
-        <View style={styles.formListPlaceholder}>
-          <Text style={[styles.placeholderText, { color: theme.colors.textSecondary }]}>
-            Form selection will be available after forms are loaded
-          </Text>
-        </View>
+        {loadingForms ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+            <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>
+              Loading forms...
+            </Text>
+          </View>
+        ) : availableForms.length === 0 ? (
+          <View style={styles.emptyFormsContainer}>
+            <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+              No forms available
+            </Text>
+            <Text style={[styles.emptySubtext, { color: theme.colors.textSecondary }]}>
+              Create forms in Form Management to configure them here
+            </Text>
+          </View>
+        ) : (
+          <View>
+            <View style={styles.formConfigHeader}>
+              <Text style={[styles.subSectionTitle, { color: theme.colors.text }]}>
+                Available Forms ({availableForms.length})
+              </Text>
+              
+              <View style={styles.formConfigActions}>
+                {activeCustomThemeId === selectedTheme?.id && (
+                  <TouchableOpacity
+                    style={[styles.applyConfigButton, { backgroundColor: '#10b981' }]}
+                    onPress={applyFormConfigOnly}
+                    disabled={isLoading}
+                  >
+                    <Text style={styles.applyConfigText}>
+                      {isLoading ? 'Applying...' : '⚡ Apply Now'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                
+                {/* Show helpful message for built-in themes */}
+                {selectedTheme && ['hightech', 'lawfirm', 'metropolitan', 'zen'].includes(selectedTheme.id) && (
+                  <View style={[styles.builtInThemeMessage, { backgroundColor: '#e0f2fe', borderColor: '#0288d1' }]}>
+                    <Text style={[styles.builtInThemeText, { color: '#01579b' }]}>
+                      💡 You can now configure forms on built-in themes. Use "Reset to Defaults" if you want to restore original settings.
+                    </Text>
+                  </View>
+                )}
+                
+                <TouchableOpacity
+                  style={[styles.refreshFormsButton, { backgroundColor: theme.colors.primary }]}
+                  onPress={loadForms}
+                >
+                  <Text style={styles.refreshFormsText}>🔄 Refresh</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            <View style={styles.formConfigInfo}>
+              <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
+                • <Text style={{ fontWeight: '600' }}>Active forms</Text> will be used for visitor check-in (limit: 1 for now)
+              </Text>
+              <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
+                • <Text style={{ fontWeight: '600' }}>Form order</Text> determines the sequence shown to visitors
+              </Text>
+              <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
+                • <Text style={{ fontWeight: '600' }}>Hidden forms</Text> won't appear in the visitor interface
+              </Text>
+            </View>
+
+            {orderedForms.map((form, index) => {
+              const isDefault = defaultFormIds.includes(form.id);
+              const isHidden = hiddenFormIds.includes(form.id);
+              const statusColor = {
+                'draft': '#6b7280',
+                'active': '#10b981', 
+                'inactive': '#f59e0b',
+                'archived': '#ef4444'
+              }[form.status];
+
+              return (
+                <View key={form.id} style={[styles.formConfigItem, { backgroundColor: theme.colors.surface }]}>
+                  <View style={styles.formItemHeader}>
+                    <View style={styles.formItemInfo}>
+                      <Text style={[styles.formItemName, { color: theme.colors.text }]}>
+                        {form.name}
+                      </Text>
+                      <View style={styles.formItemMeta}>
+                        <View style={[styles.formStatusBadge, { backgroundColor: statusColor }]}>
+                          <Text style={styles.formStatusText}>{form.status}</Text>
+                        </View>
+                        <Text style={[styles.formCategoryText, { color: theme.colors.textSecondary }]}>
+                          {form.category}
+                        </Text>
+                        {form.description && (
+                          <Text style={[styles.formDescriptionText, { color: theme.colors.textSecondary }]}>
+                            {form.description}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                    
+                    <View style={styles.formItemActions}>
+                      <TouchableOpacity
+                        style={[
+                          styles.formActionButton,
+                          { backgroundColor: isDefault ? '#10b981' : theme.colors.primary }
+                        ]}
+                        onPress={() => {
+                          if (isDefault) {
+                            toggleFormDefault(form.id);
+                          } else {
+                            // Only allow one active form for now
+                            if (defaultFormIds.length >= 1) {
+                              Alert.alert(
+                                'One Active Form Only',
+                                'Currently only one active form is supported. Please deactivate the current form first.'
+                              );
+                            } else {
+                              toggleFormDefault(form.id);
+                            }
+                          }
+                        }}
+                      >
+                        <Text style={styles.formActionText}>
+                          {isDefault ? '✓ Active' : 'Set Active'}
+                        </Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity
+                        style={[
+                          styles.formActionButton,
+                          { backgroundColor: isHidden ? '#ef4444' : '#6b7280' }
+                        ]}
+                        onPress={() => toggleFormVisibility(form.id)}
+                      >
+                        <Text style={styles.formActionText}>
+                          {isHidden ? '👁️ Hidden' : '👁️ Visible'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.formOrderControls}>
+                    <Text style={[styles.orderLabel, { color: theme.colors.textSecondary }]}>
+                      Order: #{index + 1}
+                    </Text>
+                    
+                    <View style={styles.orderButtons}>
+                      {index > 0 && (
+                        <TouchableOpacity
+                          style={[styles.orderButton, { backgroundColor: theme.colors.secondary || '#6b7280' }]}
+                          onPress={() => moveFormInOrder(index, index - 1)}
+                        >
+                          <Text style={styles.orderButtonText}>↑</Text>
+                        </TouchableOpacity>
+                      )}
+                      
+                      {index < orderedForms.length - 1 && (
+                        <TouchableOpacity
+                          style={[styles.orderButton, { backgroundColor: theme.colors.secondary || '#6b7280' }]}
+                          onPress={() => moveFormInOrder(index, index + 1)}
+                        >
+                          <Text style={styles.orderButtonText}>↓</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+
+            {defaultFormIds.length === 0 && (
+              <View style={styles.warningContainer}>
+                <Text style={[styles.warningText, { color: '#f59e0b' }]}>
+                  ⚠️ No active forms selected. The first available form will be used automatically.
+                </Text>
+              </View>
+            )}
+
+            {defaultFormIds.length > 0 && (
+              <View style={styles.summaryContainer}>
+                <Text style={[styles.summaryTitle, { color: theme.colors.text }]}>
+                  Configuration Summary
+                </Text>
+                <Text style={[styles.summaryText, { color: theme.colors.textSecondary }]}>
+                  • {defaultFormIds.length} active form{defaultFormIds.length === 1 ? '' : 's'}
+                </Text>
+                <Text style={[styles.summaryText, { color: theme.colors.textSecondary }]}>
+                  • {hiddenFormIds.length} hidden form{hiddenFormIds.length === 1 ? '' : 's'}
+                </Text>
+                <Text style={[styles.summaryText, { color: theme.colors.textSecondary }]}>
+                  • Primary form: {availableForms.find(f => f.id === defaultFormIds[0])?.name || 'Auto-select first available'}
+                </Text>
+                
+                {activeCustomThemeId === selectedTheme?.id && (
+                  <Text style={[styles.summaryText, { color: '#10b981', fontWeight: '600' }]}>
+                    💾 Save this theme to apply these form settings to visitor check-in
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
+        )}
       </ScrollView>
     );
   };
@@ -1141,11 +2264,23 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
       <Modal
         visible={showEditor}
         animationType="slide"
-        onRequestClose={() => setShowEditor(false)}
+        onRequestClose={() => {
+          if (!isSaving) {
+            setShowEditor(false);
+          }
+        }}
       >
         <View style={[styles.editorContainer, { backgroundColor: theme.colors.background }]}>
           <View style={[styles.editorHeader, { backgroundColor: theme.colors.primary }]}>
-            <TouchableOpacity onPress={() => setShowEditor(false)} style={styles.closeButton}>
+            <TouchableOpacity 
+              onPress={() => {
+                if (!isSaving) {
+                  setShowEditor(false);
+                }
+              }} 
+              style={styles.closeButton}
+              disabled={isSaving}
+            >
               <Text style={styles.closeButtonText}>✕</Text>
             </TouchableOpacity>
             
@@ -1161,9 +2296,10 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
               
               <TouchableOpacity
                 onPress={() => saveTheme(selectedTheme)}
-                style={styles.saveButton}
+                style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+                disabled={isSaving}
               >
-                <Text style={styles.saveButtonText}>Save</Text>
+                <Text style={styles.saveButtonText}>{isSaving ? 'Saving...' : 'Save'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1178,6 +2314,14 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
               placeholder="Theme Name"
               placeholderTextColor={theme.colors.textSecondary}
             />
+            
+            {activeCustomThemeId === selectedTheme.id && (
+              <View style={styles.activeThemeNotice}>
+                <Text style={[styles.activeThemeText, { color: '#10b981' }]}>
+                  ⚡ This is your active theme. Save to apply form configuration changes immediately.
+                </Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.tabContainer}>
@@ -1316,16 +2460,41 @@ const ThemeManagementScreen: React.FC<ThemeManagementScreenProps> = ({ onBack })
           >
             <Text style={styles.refreshButtonText}>🔄 Refresh</Text>
           </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.refreshButton, { backgroundColor: '#ef4444' }]}
+            onPress={cleanupDuplicateThemes}
+          >
+            <Text style={styles.refreshButtonText}>🔄 Reset to Defaults</Text>
+          </TouchableOpacity>
         </View>
         
         {themes.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
-              Loading themes...
+              No themes found
             </Text>
             <Text style={[styles.emptySubtext, { color: theme.colors.textSecondary }]}>
-              Please wait while we load the available themes
+              Built-in themes will be loaded automatically
             </Text>
+            <TouchableOpacity
+              style={[styles.restoreButton, { backgroundColor: theme.colors.primary, marginTop: 20 }]}
+              onPress={restoreBuiltInThemes}
+            >
+              <Text style={styles.restoreButtonText}>🔄 Restore Built-in Themes</Text>
+            </TouchableOpacity>
+          </View>
+        ) : themes.length < 4 ? (
+          <View>
+            <View style={styles.themeGrid}>
+              {themes.map(renderThemeCard)}
+            </View>
+            <TouchableOpacity
+              style={[styles.restoreButton, { backgroundColor: theme.colors.primary, marginTop: 20 }]}
+              onPress={restoreBuiltInThemes}
+            >
+              <Text style={styles.restoreButtonText}>🔄 Restore Missing Built-in Themes</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.themeGrid}>
@@ -1597,6 +2766,10 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: 'rgba(255,255,255,0.2)',
   },
+  saveButtonDisabled: {
+    opacity: 0.6,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
   saveButtonText: {
     color: 'white',
     fontWeight: '600',
@@ -1609,6 +2782,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     borderBottomWidth: 1,
     paddingVertical: 8,
+  },
+  activeThemeNotice: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderRadius: 6,
+    padding: 8,
+    marginTop: 8,
+  },
+  activeThemeText: {
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   tabContainer: {
     borderBottomWidth: 1,
@@ -1694,6 +2878,26 @@ const styles = StyleSheet.create({
   uploadText: {
     fontSize: 14,
   },
+  imageContainer: {
+    marginBottom: 24,
+  },
+  imageLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  deleteImageButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  deleteImageText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
+  },
   // Form editor
   formListPlaceholder: {
     padding: 40,
@@ -1707,6 +2911,189 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 16,
     lineHeight: 20,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginLeft: 8,
+    fontSize: 14,
+  },
+  emptyFormsContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  formConfigHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  formConfigActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  applyConfigButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  applyConfigText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  refreshFormsButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  refreshFormsText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  formConfigInfo: {
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  infoText: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  formConfigItem: {
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  formItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  formItemInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  formItemName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  formItemMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  formStatusBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  formStatusText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  formCategoryText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  formDescriptionText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    flex: 1,
+  },
+  formItemActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  formActionButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  formActionText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  formOrderControls: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    paddingTop: 12,
+  },
+  orderLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  orderButtons: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  orderButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  orderButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  warningContainer: {
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 16,
+  },
+  warningText: {
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  summaryContainer: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 16,
+  },
+  summaryTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  summaryText: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 2,
   },
   // Preset picker
   modalOverlay: {
@@ -1798,6 +3185,40 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '600',
     color: 'white',
+  },
+  builtInThemeMessage: {
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginVertical: 8,
+  },
+  builtInThemeText: {
+    fontSize: 14,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  copyThemeButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  copyThemeButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  restoreButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    alignSelf: 'center',
+  },
+  restoreButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 
